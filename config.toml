@@ -1,0 +1,51 @@
+[project]
+# Primary underlying symbol for the offline research pipeline.
+symbol = "SPY"
+
+[paths]
+# Relative output directory under the repository root.
+outputs_dir = "outputs"
+
+[research]
+# Fractional spot-distance band used by near-spot exploratory analysis.
+near_spot_band_width = 0.02
+# Lookback window in trading days for abnormal volume baselines.
+abnormal_volume_window = 20
+# Number of quantile buckets used in descriptive research splits.
+quantile_count = 5
+# Number of prior-day absolute-gamma strikes kept for the pinning proxy.
+pinning_candidate_count = 5
+# Minimum number of rows required before the walk-forward predictive appendix starts scoring.
+predictive_min_train_size = 20
+# Thresholds applied to the observed near_spot_gamma_share factor in the
+# report robustness table. These thresholds do not recompute alternative
+# moneyness bands.
+near_spot_share_thresholds = [0.2, 0.4, 0.6]
+# Default exposure factor column used by the offline analysis command.
+default_factor_name = "net_gamma_exposure"
+# Default next-day response column used by the offline analysis command.
+default_target_name = "next_day_realized_variance"
+# Number of bootstrap resampling iterations for confidence intervals.
+bootstrap_iterations = 1000
+# Confidence level for bootstrap percentile intervals (0 to 1).
+bootstrap_confidence_level = 0.95
+# Trailing window for volatility regime classification (trading days).
+regime_lookback_window = 20
+# Alpha candidates for Ridge regression cross-validation in the predictive appendix.
+ridge_alpha_candidates = [0.01, 0.1, 1.0, 10.0, 100.0]
+# Alternative near-spot band widths tested in the robustness section.
+# These values recompute near_spot_gamma_share for sensitivity analysis.
+robustness_band_widths = [0.01, 0.03, 0.05]
+
+[clickhouse]
+# Non-secret ClickHouse defaults. Username and password live in .env.
+host = "127.0.0.1"
+port = 50050
+secure = false
+verify = false
+
+[raw_data]
+# Canonical raw-data directory for offline analysis and notebook execution.
+raw_data_dir = "data/raw"
+# Schema version recorded in data/raw/manifest.json.
+schema_version = 1

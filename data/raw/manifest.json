@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "symbol": "SPY",
+  "date_range": {
+    "start_date": "2024-01-02",
+    "end_date": "2024-01-31"
+  },
+  "datasets": {
+    "intraday_bars": {
+      "file": "SPY_intraday_bars.parquet",
+      "row_count": 16689,
+      "size_bytes": 259999,
+      "columns": [
+        "symbol",
+        "ts",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume"
+      ]
+    },
+    "options_snapshot": {
+      "file": "SPY_options_snapshot.parquet",
+      "row_count": 168762,
+      "size_bytes": 4263291,
+      "columns": [
+        "symbol",
+        "trade_date",
+        "strike_price",
+        "expiry_date",
+        "option_type",
+        "last_price",
+        "bid",
+        "ask",
+        "bid_iv",
+        "ask_iv",
+        "open_interest",
+        "volume",
+        "delta",
+        "gamma",
+        "vega",
+        "theta",
+        "rho"
+      ]
+    }
+  },
+  "note": "These files are the offline demo source of truth for all normal project runs."
+}

@@ -1,0 +1,37 @@
+[project]
+name = "gamma-exposure-engine"
+version = "0.1.0"
+description = "Research-first SPY gamma exposure engine."
+readme = "README.md"
+authors = [
+    { name = "AIkry", email = "AIkry@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "clickhouse-connect>=0.15.1",
+    "ipykernel>=6.29.5",
+    "nbconvert>=7.16.6",
+    "polars>=1.39.3",
+    "scikit-learn>=1.8.0",
+    "scipy>=1.15.0",
+    "typer>=0.15.0",
+]
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["gamma_exposure_engine*"]
+
+[project.scripts]
+gex = "gamma_exposure_engine.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
