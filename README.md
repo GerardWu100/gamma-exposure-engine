@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/frenzied-org/gamma-exposure-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/frenzied-org/gamma-exposure-engine/actions/workflows/ci.yml)
 
-**What does options dealer positioning tell us about next-day intraday market behavior?**
+**What does the observable structure of SPY option gamma tell us about next-day intraday market behavior?**
 
 This repository is an offline-first, interview-defensible quantitative finance
 research project for `SPY`. The main artifact is a teaching notebook that
@@ -11,9 +11,12 @@ regime, and predictive results.
 
 ## Hiring Narrative
 
-The project studies whether daily options gamma structure is associated with
+The project studies whether daily unsigned options gamma structure is associated with
 next-day realized variance, intraday return magnitude, volume anomalies, and
-pinning-like behavior. It is intentionally transparent:
+pinning-like behavior. The raw schema has open interest and option Greeks, but
+no owner or dealer-position sign. The engine therefore reports
+open-interest-weighted gamma mass and does not label it dealer gamma exposure.
+It is intentionally transparent:
 
 - one symbol (`SPY`)
 - one canonical raw-data contract (`data/raw/`)
@@ -101,11 +104,11 @@ A concise interview explanation can follow this structure:
 
 1. **Question:** does gamma positioning relate to next-day market behavior?
 2. **Data contract:** two local raw files, fixed schema, fixed date window.
-3. **Method:** clean -> aggregate gamma factors -> align `t` to `t+1` -> analyze.
+3. **Method:** clean -> aggregate unsigned gamma-mass factors -> align `t` to `t+1` -> analyze.
 4. **Evidence:** quantile means, non-parametric tests, regime splits,
    robustness checks, and walk-forward prediction baselines.
 5. **Limitations:** association only, sample-window dependence, single symbol,
-   sensitivity to options cleaning conventions.
+   sensitivity to options cleaning conventions, and no observed position sign.
 
 ## Project Layout
 

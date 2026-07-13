@@ -1,39 +1,75 @@
 ---
-title: "What SPY Gamma Exposure Told Me About Next-Day Volatility"
-description: "An offline study of SPY option gamma, next-day realized variance, and the limits hidden inside a clean quantitative pipeline."
+title: "SPY Gamma Without an Invented Dealer Sign"
+description: "A reproducible study of open-interest-weighted SPY gamma, next-day realized variance, and the difference between observable option structure and dealer positioning."
 date: 2026-07-13
 image: images/gamma-surface-cover.png
 categories: ["Quantitative Research", "Options"]
 ---
 
-# What SPY Gamma Exposure Told Me About Next-Day Volatility
+# SPY Gamma Without an Invented Dealer Sign
 
-Options commentary often gives gamma a confident story. Concentrated dealer gamma should dampen price moves; short gamma should amplify them. The story is plausible, but a useful research pipeline has to separate the mechanism from what the available data can identify.
+The usual gamma story is appealing. Dealers who are long gamma hedge against a
+price move and may dampen it; dealers who are short gamma hedge with the move
+and may amplify it. But an option chain with open interest and Greeks does not
+say who owns each position. Without that missing sign, a dataset cannot identify
+dealer gamma.
 
-I tested a narrower question with committed SPY data: is an open-interest-weighted gamma measure observed on day $t$ associated with realized intraday variance on the next trading day, $t+1$? The January 2024 sample contains 21 exposure dates and 20 properly aligned factor-response pairs. It produces a clear answer for this small window: no persuasive association.
+I originally let the code call its daily sum `net_gamma_exposure`. An audit
+showed that this was wrong: the series equalled `absolute_gamma_exposure` on all
+21 dates, and the supposed negative-gamma node never existed. The corrected
+engine now reports exactly what the inputs support: unsigned,
+open-interest-weighted gamma mass.
 
-That null result is worth keeping. It also exposes a more consequential issue in the factor definition. The implementation aggregates positive option gamma without inferring dealer inventory direction, so its stored `net_gamma_exposure` is not signed dealer gamma.
+The renamed factor still produces a useful empirical question. Is gamma mass on
+SPY option snapshot date $t$ associated with intraday realized variance on the
+next observed trading date, $t+1$? In January 2024, the answer is no. The sample
+has only 20 aligned observations, so this is a diagnostic result, not a settled
+claim about market microstructure.
 
-## The measurement comes before the story
+## What the chain can and cannot measure
 
-For option contract $i$ on date $t$, define $OI_{i,t}$ as open interest in contracts, $M=100$ as the standard US equity-option contract multiplier, $S_t$ as the SPY close in dollars, and $\Gamma_{i,t}$ as option gamma, the change in delta for a one-dollar move in SPY. The engine computes contract-level exposure $g_{i,t}$ as
+For option contract $i$ on date $t$, define:
+
+- $OI_{i,t}$: open interest, measured in contracts;
+- $M=100$: shares represented by one standard SPY option contract;
+- $S_t$: the SPY closing price, measured in dollars per share;
+- $\Gamma_{i,t}$: long-option gamma, the change in delta for a one-dollar move
+  in SPY, measured in inverse dollars;
+- $m_{i,t}$: the contract's open-interest-weighted gamma mass.
+
+The engine computes
 
 $$
-g_{i,t} = OI_{i,t} M S_t^2 \Gamma_{i,t}.
+m_{i,t}=OI_{i,t} M S_t^2 \Gamma_{i,t}.
 $$
 
-It then sums across the set $\mathcal{O}_t$ of valid option rows observed on date $t$:
+The units are worth tracing. Contracts cancel with contracts, shares cancel
+with shares, and $S_t^2\Gamma_{i,t}$ leaves one dollar. Thus $m_{i,t}$ is a
+dollar-scaled curvature measure for a unit proportional spot move. For the more
+familiar one-percent convention, define
 
 $$
-G_t = \sum_{i \in \mathcal{O}_t} g_{i,t}.
+m_{i,t}^{1\%}=0.01m_{i,t}.
 $$
 
-The $S_t^2$ scaling converts a local curvature measure into the implementation's dollar-scaled exposure convention. This is a descriptive option-market factor. It does not reveal who owns each contract, whether a market maker is long or short it, or how much has already been hedged.
+The daily total over the set $\mathcal O_t$ of retained contracts is
 
-The core expression in the cleaner is deliberately plain:
+$$
+G_t=\sum_{i\in\mathcal O_t}m_{i,t},
+\qquad
+G_t^{1\%}=0.01G_t.
+$$
+
+This is not expected dealer hedge flow. To estimate hedge flow, I would also
+need position ownership and sign, the price move, and assumptions about when
+and how dealers rebalance. Open interest is an unsigned stock of outstanding
+contracts, not a dealer inventory field.
+
+Standard long calls and puts both have non-negative gamma. The corrected
+cleaner makes that data contract explicit:
 
 ```python
-gamma_exposure = (
+open_interest_weighted_gamma = (
     open_interest
     * CONTRACT_MULTIPLIER
     * spot_close
@@ -42,23 +78,35 @@ gamma_exposure = (
 )
 ```
 
-That plainness makes an important fact easy to audit: no call/put or dealer-position sign enters the multiplication.
+Negative vanilla gamma is now rejected as invalid vendor data rather than
+misread as a short position. The daily interface contains
+`total_open_interest_weighted_gamma`, `near_spot_gamma_mass_share`,
+`front_expiry_gamma_mass_share`, `largest_gamma_mass_strike_distance`,
+`call_put_gamma_mass_imbalance`, and `gamma_mass_concentration_index`. The old
+net, absolute, positive-node, and negative-node fields are gone.
 
-## Building a next-day response without lookahead
+## The response is next-day realized variance
 
-For minute $j$ on trading day $t$, let $P_{t,j}$ be the minute close and let $r_{t,j}$ be its log return:
+Let $P_{t,j}$ denote the close of minute $j$ on trading date $t$. The minute log
+return $r_{t,j}$ is
 
 $$
-r_{t,j} = \log(P_{t,j}) - \log(P_{t,j-1}).
+r_{t,j}=\log(P_{t,j})-\log(P_{t,j-1}).
 $$
 
-If day $t$ contains $n_t$ valid minute returns, daily realized variance is
+If date $t$ has $n_t$ valid minute returns, its realized variance $RV_t$ is
 
 $$
-RV_t = \sum_{j=1}^{n_t} r_{t,j}^2.
+RV_t=\sum_{j=1}^{n_t}r_{t,j}^2.
 $$
 
-The research row pairs $G_t$ with $RV_{t+1}$. Here, $t+1$ means the next observed trading date, not the next calendar day. The dataset builder sorts exposure dates, shifts that calendar by one row, and keeps a response only when its date matches the shifted exposure date. This avoids pairing Friday's factor with Saturday or leaking Friday's realized move into Friday's predictor.
+Realized variance is dimensionless because each log return is dimensionless.
+Its square root is realized volatility over the sampled session, before any
+annualization.
+
+Each research row pairs $G_t$ with $RV_{t+1}$. Here $t+1$ is the next trading
+date present in the exposure calendar, not the next calendar day. The join is
+deliberately explicit:
 
 ```python
 ordered_exposures = exposures.sort("trade_date")
@@ -73,71 +121,111 @@ aligned = exposure_calendar.join(
 )
 ```
 
-The offline boundary is just as useful as the date alignment. Both raw Parquet files are committed, the run does not call ClickHouse, and every table used below can be regenerated with one command. That limits accidental differences between an exploratory notebook and the reported result.
+That shift prevents a same-day response from leaking into its own predictor and
+handles weekends without manufacturing dates.
 
-## What the 20 observations show
+## What the corrected run shows
 
-The daily factor ranges from 2.98 trillion to 4.74 trillion in the engine's exposure units. The following day's realized variance moves quite differently.
+The raw option file contains 168,762 rows. Cleaning retains 131,215. It removes
+37,547 rows with non-positive open interest, or 22.25% of the input; 24,331
+retained rows have zero gamma. No negative gamma row appears in the shipped
+sample.
 
-![Daily SPY gamma exposure and following-day realized variance](images/01-daily-alignment.png)
+Across 21 dates, $G_t$ ranges from $2.98 trillion to $4.74 trillion in the raw
+unit-proportional-move scale. The one-percent equivalents, $G_t^{1\%}$, are
+$29.81 billion to $47.41 billion. These are gamma-mass scales, not predicted
+trades.
 
-The two series have visible day-to-day variation, but their peaks and troughs do not line up consistently. A chart can suggest that absence; rank statistics give it a precise test.
+![Daily SPY gamma mass and following-day realized variance](images/01-daily-alignment.png)
 
-Spearman's rank correlation measures monotonic association. Define $R(G_t)$ as the rank of $G_t$ and $R(RV_{t+1})$ as the rank of the following day's realized variance. With $\operatorname{Cov}$ denoting covariance and $\sigma$ denoting standard deviation, the statistic is
+The two lines vary, but their peaks and troughs do not line up consistently.
+The most obvious variance spike occurs while gamma mass is near the middle of
+its observed range.
+
+To test monotonic association, I use Spearman rank correlation. Let $R(G_t)$ be
+the rank of gamma mass and $R(RV_{t+1})$ the rank of next-day realized variance.
+With $\operatorname{Cov}$ denoting covariance and $\sigma$ denoting standard
+deviation,
 
 $$
-\rho_s = \frac{\operatorname{Cov}\left(R(G_t), R(RV_{t+1})\right)}
+\rho_s=
+\frac{\operatorname{Cov}\left(R(G_t),R(RV_{t+1})\right)}
 {\sigma_{R(G)}\sigma_{R(RV)}}.
 $$
 
-For this sample, $\rho_s=0.030$ with a two-sided p-value of 0.900. A Kruskal-Wallis test across five gamma buckets gives $H=4.786$ and a p-value of 0.310. Neither test rejects the null of no systematic relationship at conventional significance levels.
+The estimate is $\rho_s=0.030$ with a two-sided p-value of $0.900$. A
+Kruskal-Wallis test across five gamma-mass quintiles gives $H=4.786$ and a
+p-value of $0.310$. Neither test rejects its null hypothesis at conventional
+levels.
 
-| Check | Result | Interpretation |
+| Check | Result | Reading |
 |---|---:|---|
-| Aligned observations | 20 | One month is a diagnostic sample, not a basis for a stable estimate |
+| Aligned observations | 20 | One month is too short for a stable estimate |
 | Spearman rank correlation | 0.030 | Almost no monotonic association |
-| Spearman p-value | 0.900 | The observed rank relationship is compatible with noise |
-| Kruskal-Wallis statistic | 4.786 | Bucket distributions differ too little for this sample |
-| Kruskal-Wallis p-value | 0.310 | No rejection across the five buckets |
+| Spearman p-value | 0.900 | The rank relation is compatible with noise |
+| Kruskal-Wallis statistic | 4.786 | Quintile distributions are not clearly separated |
+| Kruskal-Wallis p-value | 0.310 | No rejection across five quintiles |
 
-The quintile view tells the same story. Each bucket contains only four observations. Mean next-day variance rises through the middle buckets, then falls in the highest bucket. The 95% percentile-bootstrap intervals overlap widely.
+![Next-day realized variance by gamma-mass quintile](images/02-quantile-variance.png)
 
-![Next-day realized variance by gamma-exposure quintile](images/02-quantile-variance.png)
+Each quintile contains four observations. Mean next-day variance rises from
+$3.80\times10^{-5}$ in the first quintile to $5.91\times10^{-5}$ in the third,
+then falls to $4.04\times10^{-5}$ in the fifth. The 95% percentile-bootstrap
+intervals overlap widely. There is no monotonic dose-response pattern here.
 
-A monotonic gamma effect should leave a more orderly sequence than this. The fifth bucket's mean, $4.04 \times 10^{-5}$, sits below the third bucket's $5.91 \times 10^{-5}$. With four days per bucket, either value can move sharply when one observation changes.
+![Gamma mass against next-day realized variance](images/03-factor-scatter.png)
 
-![Scatter plot of gamma exposure against next-day realized variance](images/03-factor-scatter.png)
+The fitted line is only a visual summary. It is not an out-of-sample forecast.
+The scatter and rank statistic both say that this month contains little evidence
+of a relationship.
 
-The scatter plot makes the sample-size problem tangible. The fitted line is descriptive, not a forecast, and the rank correlation printed on the chart is the statistic that matters here.
+## What survives the audit
 
-## The audit found a bigger limitation than the p-value
+Renaming the factor does not alter its values, ordering, quantiles, or test
+statistics. It alters the economic claim attached to those values. That is the
+point of the correction.
 
-The raw snapshot contains 168,762 option rows. Cleaning retains 131,215 rows and excludes 37,547 rows with non-positive open interest, or 22.25% of the input. Another 24,331 retained rows have zero gamma. Those diagnostics are useful because they make the input filter visible rather than silently shrinking the sample.
+Several structural factors remain valid because they need no ownership sign.
+For example, the near-spot share asks how much total gamma mass sits within a
+configured moneyness band, and the concentration index is a
+Herfindahl-Hirschman Index over strike-expiry shares. The call-put imbalance
+describes composition between option types; it is not a long-short dealer
+signal.
 
-The factor audit matters more. In every one of the 21 daily snapshots:
+The configured regime model needs 20 prior observations before assigning a
+label. The walk-forward comparison also needs 20 training rows before its first
+score. After next-day alignment, exactly 20 rows remain, so both result tables
+are empty. Lowering those safeguards just to produce a number would weaken the
+research design.
 
-- `net_gamma_exposure` equals `absolute_gamma_exposure` exactly;
-- the largest negative-gamma strike distance is undefined;
-- all contract gamma contributions entering the aggregate are non-negative.
+The first-half and second-half rank correlations are $-0.188$ and $0.152$, with
+p-values of $0.603$ and $0.676$. Ten observations per half cannot establish
+instability, but the sign change gives no support for a durable effect.
 
-The result follows directly from the formula. Standard call gamma and put gamma are both positive for a long option. Without a position-side assumption, the aggregate measures open-interest-weighted gamma mass. Calling it signed dealer gamma would add information that the dataset does not contain.
+## What a signed dealer-gamma study would require
 
-This distinction changes the economic interpretation. A dealer inventory model might assign signs from customer flow, trade direction, or an explicit heuristic. Each choice adds assumptions and possible measurement error. The current factor avoids those assumptions, but it cannot test the usual long-dealer-gamma versus short-dealer-gamma story.
+A signed study needs data that distinguish customer and dealer positions, or at
+least trade direction and a documented inventory model. A call-positive,
+put-negative shortcut does not solve the problem: long calls and long puts are
+both long gamma. Such a shortcut mixes option type with position side.
 
-## Small samples also disable the sophisticated appendices
+A stronger design would add several years of snapshots, record the exact
+observation timestamp, handle corporate actions and expiries explicitly, and
+evaluate any signing rule against actual flow or inventory data. The unsigned
+factor should remain as a benchmark. Comparing it with each signed estimate
+would reveal how much of a result comes from observable gamma concentration and
+how much comes from the inventory assumption.
 
-The configured volatility-regime classifier needs 20 prior observations before it labels a day. The walk-forward predictive comparison also needs 20 training rows before scoring its first out-of-sample forecast. Once day-$t$ exposures are aligned with day-$t+1$ responses, only 20 rows remain. Both output tables are therefore empty by design.
+This January run does not validate the familiar dealer-gamma narrative. It does
+something more modest and more defensible: it measures observable option
+curvature, preserves time order, reports a null result, and refuses to invent a
+position sign.
 
-That is the correct behavior. Lowering the thresholds until a model produces a score would create a result with almost no evaluation history. The empty tables document insufficient evidence more honestly than a fitted model on the full month.
+## References
 
-The first-half and second-half rank correlations also change sign: $-0.188$ for the first ten observations and $0.152$ for the last ten. Their p-values are 0.603 and 0.676. This split does not prove instability, since each half is tiny, but it gives no reason to treat the full-sample estimate as durable.
-
-## What I would change before using this factor
-
-The next research run needs more dates before it needs more model complexity. A multi-year sample would permit past-only regime labels, walk-forward forecasts, and leave-one-month-out checks that contain actual observations.
-
-I would also rename the current factor to `open_interest_weighted_gamma` so the code states exactly what the data support. A separate dealer-gamma estimate could then encode and test a documented sign convention. Comparing the unsigned and signed versions would show whether an apparent effect comes from gamma concentration or from the inventory assumption.
-
-Finally, daily open interest is stale within the session and does not identify intraday positioning changes. If the purpose is to explain next-day variance, dated snapshots, corporate-action handling, option expiry effects, and the exact observation timestamp all belong in the data contract.
-
-The January run does not validate the market narrative. It validates the research discipline: preserve time order, expose the factor convention, and allow the output to be empty or statistically unremarkable when the data cannot support a stronger claim.
+- Fischer Black and Myron Scholes, [The Pricing of Options and Corporate Liabilities](https://doi.org/10.1086/260062), *Journal of Political Economy*, 1973.
+- Options Clearing Corporation, [Characteristics and Risks of Standardized Options](https://www.theocc.com/company-information/documents-and-archives/options-disclosure-document), option mechanics and standardized contract risks.
+- Options Industry Council, [What Is an Option?](https://www.optionseducation.org/optionsoverview/what-is-an-option), contract structure and the standard 100-share unit.
+- Options Industry Council, [Gamma](https://www.optionseducation.org/advancedconcepts/gamma), gamma definition and interpretation.
+- Torben G. Andersen, Tim Bollerslev, Francis X. Diebold, and Paul Labys, [Modeling and Forecasting Realized Volatility](https://doi.org/10.1111/1468-0262.00418), *Econometrica*, 2003.
+- Andrea Barbon and Andrea Buraschi, [Gamma Fragility](https://doi.org/10.1093/rfs/hhaa048), *Review of Financial Studies*, 2021.

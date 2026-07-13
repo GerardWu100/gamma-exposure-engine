@@ -1,7 +1,8 @@
 # GUIDE_research
 
 `src/gamma_exposure_engine/research/` contains modular analysis blocks that operate on aligned daily
-exposure-response data.
+gamma-mass/response data. The exposure-side columns describe unsigned option
+structure; they do not identify dealer inventory.
 
 ## Modules
 

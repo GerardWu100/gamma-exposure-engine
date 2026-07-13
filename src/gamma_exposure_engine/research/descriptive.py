@@ -5,12 +5,12 @@ the contract intentionally small:
 
 - deterministic quantile summaries over a factor and target pair
 - a threshold-based robustness split for the observed
-  ``near_spot_gamma_share`` factor
+  ``near_spot_gamma_mass_share`` factor
 
 The robustness helper is intentionally honest about what it measures. It does
 not rebuild gamma factors under alternative moneyness bands. Instead, it asks
 whether the association with the chosen target looks similar when the already
-computed ``near_spot_gamma_share`` factor is split at several configured
+computed ``near_spot_gamma_mass_share`` factor is split at several configured
 thresholds.
 """
 
@@ -33,7 +33,7 @@ BELOW_THRESHOLD_COUNT_COLUMN: str = "below_threshold_count"
 AT_OR_ABOVE_THRESHOLD_TARGET_MEAN_COLUMN: str = "at_or_above_threshold_target_mean"
 BELOW_THRESHOLD_TARGET_MEAN_COLUMN: str = "below_threshold_target_mean"
 TARGET_MEAN_SPREAD_COLUMN: str = "target_mean_spread"
-NEAR_SPOT_GAMMA_SHARE_COLUMN: str = "near_spot_gamma_share"
+NEAR_SPOT_GAMMA_SHARE_COLUMN: str = "near_spot_gamma_mass_share"
 BUCKET_ASSIGNMENT_COLUMN: str = "_quantile_bucket_assignment"
 ROW_INDEX_COLUMN: str = "_row_index"
 SUBPERIOD_COLUMN: str = "subperiod"
@@ -126,16 +126,16 @@ def build_near_spot_share_threshold_summary(
     Args:
         frame:
             Research frame with one row per trade date. The frame must include
-            the observed ``near_spot_gamma_share`` factor plus the target
+            the observed ``near_spot_gamma_mass_share`` factor plus the target
             column named by ``target_name``.
         target_name:
             Name of the target column whose mean is summarized on each side of
             every threshold split.
         thresholds:
             Share cutoffs applied to the already-computed
-            ``near_spot_gamma_share`` column. A threshold of ``0.20`` means
-            rows are split into ``near_spot_gamma_share >= 0.20`` and
-            ``near_spot_gamma_share < 0.20``.
+            ``near_spot_gamma_mass_share`` column. A threshold of ``0.20`` means
+            rows are split into ``near_spot_gamma_mass_share >= 0.20`` and
+            ``near_spot_gamma_mass_share < 0.20``.
 
     Returns:
         pl.DataFrame: One row per threshold with counts and target means on

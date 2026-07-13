@@ -3,64 +3,76 @@
 ## Project scan summary
 
 - Project archetype candidate: mixed data pipeline and empirical risk research.
-- Supporting evidence from files: `offline_pipeline.py` defines a local, auditable path from two Parquet inputs to aligned day-$t$ factors and day-$t+1$ responses; the research modules add quantile, rank-correlation, subperiod, sensitivity, regime, and walk-forward checks.
+- Supporting evidence from files: the offline pipeline transforms two committed
+  Parquet inputs into day-$t$ option-structure factors and day-$t+1$ responses;
+  the research modules add quantiles, rank tests, robustness splits, and
+  past-only predictive checks.
 
 ## Blueprint selection
 
-- Problem: test whether an open-interest-weighted SPY gamma measure is associated with next-day intraday variance.
-- Options considered: data-pipeline, risk-model, and mixed.
 - Selected blueprint: mixed.
-- Why this blueprint fits this project: the engineering contract matters because it prevents hidden data access and lookahead, while the output is an empirical association study rather than a production forecast or a derivatives pricing model.
-- Planned section order: research question; exact gamma convention; time alignment; reproducible evidence; what the null result says; implementation limitations; extensions.
-- Verification: reproduce the January 2024 run from committed Parquet files and reconcile every reported number with frozen blog data.
+- Why this blueprint fits this project: the main research result depends on both
+  a precise data contract and an empirical association test. It is neither a
+  dealer-inventory estimator nor a derivatives pricing exercise.
+- Planned section order: market claim; observable data; gamma derivation and
+  units; corrected code interface; time alignment; evidence; diagnostics;
+  economic interpretation; limitations; references.
 
 ## Planned equations
 
-1. Contract-level gamma exposure
-   - Purpose: define the quantity aggregated by the engine.
-   - Symbols: open interest $OI_i$ in contracts, contract multiplier $M=100$, spot price $S_t$ in dollars, option gamma $\Gamma_i$ in inverse dollars, and contract index $i$.
+1. Contract gamma mass:
+   - Purpose: distinguish observable open-interest-weighted curvature from
+     unobserved signed dealer inventory.
+   - Symbols: open interest $OI_{i,t}$, contract multiplier $M$, spot $S_t$,
+     vanilla gamma $\Gamma_{i,t}$, and contract mass $m_{i,t}$.
    - Delimiter: display.
-2. Daily aggregate
-   - Purpose: show how contract values become the daily factor $G_t$.
-   - Symbols: daily option set $\mathcal{O}_t$ and contract exposure $g_{i,t}$.
+2. Daily gamma mass and one-percent scaling:
+   - Purpose: define the factor and convert its raw dollar unit to a one-percent
+     spot-move convention.
+   - Symbols: option set $\mathcal O_t$, total $G_t$, and $G_t^{1\%}$.
    - Delimiter: display.
-3. Intraday realized variance
-   - Purpose: define the next-day response.
-   - Symbols: minute close $P_{t,j}$, minute log return $r_{t,j}$, and number of intraday returns $n_t$.
+3. Realized variance:
+   - Purpose: define the next-day response from minute log returns.
+   - Symbols: price $P_{t,j}$, return $r_{t,j}$, and return count $n_t$.
    - Delimiter: display.
-4. Spearman rank correlation
-   - Purpose: explain the monotonic association test without assuming linearity.
-   - Symbols: rank variables $R(G_t)$ and $R(RV_{t+1})$, covariance, and standard deviations.
+4. Spearman rank correlation:
+   - Purpose: test monotonic association without assuming a linear relation.
+   - Symbols: ranks, covariance, and standard deviations.
    - Delimiter: display.
 
 ## Planned code excerpts
 
 1. File: `src/gamma_exposure_engine/exposure/cleaning.py`
-   - Function/block: contract gamma-exposure expression.
-   - Why include this excerpt: it exposes the exact sign and unit convention behind the headline factor.
+   - Function/block: open-interest-weighted gamma expression.
+   - Why include this excerpt: it proves that no dealer sign is fabricated.
 2. File: `src/gamma_exposure_engine/research/dataset.py`
-   - Function/block: next-observed-date alignment.
-   - Why include this excerpt: it demonstrates how the pipeline avoids pairing an exposure with a same-day response.
+   - Function/block: next-observed-trading-date join.
+   - Why include this excerpt: it proves the factor precedes the response.
 
 ## Planned technical graphs
 
 1. Graph type: dual-axis daily time series.
-   - Source: generate from frozen `gamma_factors.csv` and `research_dataset.parquet`.
-   - Expected takeaway: gamma changes materially across days, but next-day variance does not visually co-move in a stable way.
-2. Graph type: quantile means with bootstrap confidence intervals.
-   - Source: generate from frozen `quantile_summary.csv`.
-   - Expected takeaway: bucket means are not monotonic and the intervals overlap heavily.
-3. Graph type: scatter plot with rank-correlation annotation.
-   - Source: generate from the frozen aligned dataset.
-   - Expected takeaway: 20 observations provide no persuasive monotonic relationship.
+   - Source: regenerated from the corrected frozen research dataset.
+   - Expected takeaway: gamma mass varies, but next-day variance does not track it.
+2. Graph type: quintile means with bootstrap intervals.
+   - Source: regenerated from the corrected quantile table.
+   - Expected takeaway: means are non-monotonic and intervals overlap.
+3. Graph type: scatter with descriptive fit and rank statistic.
+   - Source: regenerated from the corrected aligned dataset.
+   - Expected takeaway: 20 observations show no persuasive association.
 
 ## Risks, gaps, and assumptions
 
-- Data gaps: the committed demo covers 21 trading days and yields 20 aligned observations. The configured 20-day regime lookback and 20-row minimum training sample leave no out-of-sample regime or predictive results.
-- Assumptions: open interest is used as supplied; gamma is aggregated without an inferred dealer-position sign; the analysis is descriptive and associational.
-- Critical limitation: every stored contract gamma is non-negative in the demo. Consequently `net_gamma_exposure` equals `absolute_gamma_exposure`, and the negative-gamma-node factor is undefined.
-- Validation checks: rerun the offline pipeline, compare row counts and statistics, execute the chart script, resolve every image reference, run the blog validator, and confirm no website files were touched.
+- Data gaps: 21 exposure dates produce only 20 aligned observations; regime and
+  walk-forward outputs are empty under the configured minimum histories.
+- Assumptions: open interest is used as supplied; vanilla gamma is non-negative;
+  the factor measures unsigned market structure, not dealer positioning.
+- Validation checks: run all tests, reproduce the pipeline, regenerate and
+  inspect figures, reconcile numerical claims, validate both posts, compare
+  protected blocks, resolve image paths, and confirm the website is untouched.
 
 ## Deployment note
 
-The canonical workspace is `gamma-exposure-engine/blog/`. The normal skill workflow would copy publishable files to `~/projects/website/content/post/<slug>/`, build Hugo, and commit the generated site. The user explicitly deferred publishing, so this task stops at the project-local bilingual package and will not read from, write to, build, commit, or push the website repository.
+The canonical workspace is `gamma-exposure-engine/blog/`. The user explicitly
+deferred website publishing, so no files will be copied to `~/projects/website`
+and no Hugo build or website commit will be made.

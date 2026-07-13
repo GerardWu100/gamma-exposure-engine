@@ -17,8 +17,6 @@ def write_settings_files(
     project_root = tmp_path
     config_path = project_root / "config.toml"
     env_path = project_root / ".env"
-    outputs_dir = project_root / "artifacts" / "outputs"
-
     config_path.write_text(
         """
 [project]
@@ -34,7 +32,7 @@ quantile_count = 5
 pinning_candidate_count = 5
 predictive_min_train_size = 20
 near_spot_share_thresholds = [0.2, 0.4, 0.6]
-default_factor_name = "net_gamma_exposure"
+default_factor_name = "total_open_interest_weighted_gamma"
 default_target_name = "next_day_realized_variance"
 bootstrap_iterations = 1000
 bootstrap_confidence_level = 0.95
@@ -94,7 +92,7 @@ def test_load_settings_uses_explicit_paths_and_does_not_create_outputs_dir(
     assert settings.research.pinning_candidate_count == 5
     assert settings.research.predictive_min_train_size == 20
     assert settings.research.near_spot_share_thresholds == (0.2, 0.4, 0.6)
-    assert settings.research.default_factor_name == "net_gamma_exposure"
+    assert settings.research.default_factor_name == "total_open_interest_weighted_gamma"
     assert settings.research.default_target_name == "next_day_realized_variance"
     assert settings.research.bootstrap_iterations == 1000
     assert settings.research.bootstrap_confidence_level == 0.95
@@ -160,9 +158,7 @@ def test_load_settings_rejects_missing_clickhouse_user_when_password_present(
         tmp_path=tmp_path,
         env_text="CLICKHOUSE_PASSWORD=env-password",
     )
-    env_path.write_text(
-        env_path.read_text().replace("CLICKHOUSE_USER=env-user\n", "")
-    )
+    env_path.write_text(env_path.read_text().replace("CLICKHOUSE_USER=env-user\n", ""))
 
     with pytest.raises(ValueError, match="CLICKHOUSE_USER"):
         load_settings(

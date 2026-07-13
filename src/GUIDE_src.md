@@ -15,7 +15,7 @@ research pipeline.
   refresh path.
 - `src/gamma_exposure_engine/pipeline/`: linear offline orchestration and artifact
   writing.
-- `src/gamma_exposure_engine/exposure/`: options cleaning and gamma factor
+- `src/gamma_exposure_engine/exposure/`: options cleaning and unsigned gamma-mass factor
   construction.
 - `src/gamma_exposure_engine/intraday/`: intraday response metrics.
 - `src/gamma_exposure_engine/research/`: descriptive, inferential, regime,

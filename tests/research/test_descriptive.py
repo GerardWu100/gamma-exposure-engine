@@ -137,7 +137,7 @@ def test_build_near_spot_share_threshold_summary_splits_observed_share_levels() 
                 date(2024, 1, 4),
                 date(2024, 1, 5),
             ],
-            "near_spot_gamma_share": [0.10, 0.25, 0.45, 0.70],
+            "near_spot_gamma_mass_share": [0.10, 0.25, 0.45, 0.70],
             "next_day_realized_variance": [1.0, 2.0, 4.0, 8.0],
         }
     )
@@ -210,7 +210,7 @@ def test_alternative_band_sensitivity_returns_one_row_per_band() -> None:
             "strike_price": [99.0, 100.0, 101.0, 95.0, 105.0, 110.0],
             "expiry_date": [date(2024, 1, 19)] * 6,
             "option_type": ["c"] * 6,
-            "gamma_exposure": [10.0, 20.0, 15.0, 5.0, 8.0, 3.0],
+            "open_interest_weighted_gamma": [10.0, 20.0, 15.0, 5.0, 8.0, 3.0],
             "moneyness": [-0.01, 0.0, 0.01, -0.05, 0.05, 0.10],
             "spot_close": [100.0] * 6,
         }

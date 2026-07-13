@@ -167,7 +167,7 @@ class _FakeResearchSettings:
         self.pinning_candidate_count = 5
         self.predictive_min_train_size = 1
         self.near_spot_share_thresholds = (0.25, 0.5)
-        self.default_factor_name = "largest_positive_gamma_strike_distance"
+        self.default_factor_name = "largest_gamma_mass_strike_distance"
         self.default_target_name = "next_day_realized_variance"
         self.bootstrap_iterations = 200
         self.bootstrap_confidence_level = 0.95

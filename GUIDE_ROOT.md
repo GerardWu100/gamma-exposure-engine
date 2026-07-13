@@ -28,7 +28,7 @@ The core research flow is linear and interview-friendly:
 
 1. load local intraday bars and options snapshots
 2. construct daily spot close and clean options rows
-3. build daily gamma factors and intraday response metrics
+3. build daily unsigned gamma-mass factors and intraday response metrics
 4. align day-`t` exposures with day-`t+1` responses
 5. run descriptive, inferential, regime, robustness, and predictive modules
 6. write simple artifacts to the chosen output directory
@@ -80,3 +80,6 @@ from raw Parquet contract to interpretation and limitations.
   narrative and local reproducibility.
 - 2026-05-20: Moved implementation under `src/gamma_exposure_engine/` package
   layout and promoted `config.toml` to the repository root.
+- 2026-07-13: Replaced misleading signed dealer-gamma interfaces with
+  open-interest-weighted gamma-mass fields because the offline schema contains
+  no ownership or position sign.

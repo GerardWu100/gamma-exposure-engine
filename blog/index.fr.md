@@ -1,39 +1,77 @@
 ---
-title: "Ce que l'exposition gamma du SPY m'a appris sur la volatilité du lendemain"
-description: "Une étude hors ligne du gamma des options sur SPY, de la variance réalisée le lendemain et des limites cachées dans un pipeline quantitatif propre."
+title: "Le gamma du SPY sans inventer le signe des dealers"
+description: "Une étude reproductible du gamma du SPY pondéré par l'open interest, de la variance réalisée le lendemain et de l'écart entre structure observable et positions des dealers."
 date: 2026-07-13
 image: images/gamma-surface-cover.png
 categories: ["Quantitative Research", "Options"]
 ---
 
-# Ce que l'exposition gamma du SPY m'a appris sur la volatilité du lendemain
+# Le gamma du SPY sans inventer le signe des dealers
 
-Les commentaires de marché racontent souvent une histoire très assurée sur le gamma. Une forte concentration de gamma chez les dealers devrait amortir les mouvements de prix; un gamma court devrait les amplifier. Le mécanisme est plausible, mais un bon pipeline de recherche doit distinguer ce mécanisme de ce que les données permettent réellement d'identifier.
+Le récit habituel sur le gamma est séduisant. Un dealer long gamma couvre à
+contre-courant du mouvement et peut l'amortir; un dealer short gamma couvre dans
+le sens du mouvement et peut l'amplifier. Mais une chaîne d'options contenant
+l'open interest et les Greeks n'indique pas qui détient chaque position. Sans
+ce signe, les données ne permettent pas d'identifier le gamma des dealers.
 
-J'ai posé une question plus étroite à partir de données SPY versionnées avec le projet : une mesure du gamma pondérée par l'open interest au jour $t$ est-elle associée à la variance intrajournalière réalisée le jour de bourse suivant, $t+1$? L'échantillon de janvier 2024 comprend 21 dates d'exposition et 20 paires facteur-réponse correctement alignées. Pour cette courte fenêtre, la réponse est nette : aucune association convaincante.
+Le code appelait initialement sa somme quotidienne `net_gamma_exposure`.
+L'audit a montré que ce nom était faux : la série était égale à
+`absolute_gamma_exposure` aux 21 dates, et le prétendu nœud de gamma négatif
+n'existait jamais. Le moteur corrigé décrit maintenant ce que les entrées
+permettent réellement de mesurer : une masse de gamma non signée, pondérée par
+l'open interest.
 
-Ce résultat nul mérite d'être conservé. Il révèle aussi un problème plus lourd dans la définition du facteur. L'implémentation agrège des gammas d'options positifs sans déduire le sens de l'inventaire des dealers. Son `net_gamma_exposure` n'est donc pas un gamma dealer signé.
+Ce facteur renommé pose tout de même une question empirique valable. La masse de
+gamma observée sur les options SPY à la date $t$ est-elle associée à la variance
+intrajournalière réalisée lors de la prochaine séance observée, $t+1$? Pour
+janvier 2024, la réponse est non. L'échantillon ne contient que 20 observations
+alignées. C'est un diagnostic, pas une conclusion définitive sur la
+microstructure des marchés.
 
-## La mesure passe avant le récit
+## Ce que la chaîne permet de mesurer
 
-Pour le contrat d'option $i$ à la date $t$, on note $OI_{i,t}$ l'open interest en nombre de contrats, $M=100$ le multiplicateur standard des options américaines sur actions, $S_t$ la clôture du SPY en dollars et $\Gamma_{i,t}$ le gamma de l'option, soit la variation du delta pour un mouvement d'un dollar du SPY. Le moteur calcule l'exposition du contrat $g_{i,t}$ ainsi :
+Pour le contrat d'option $i$ à la date $t$, on définit :
+
+- $OI_{i,t}$ : l'open interest, mesuré en contrats;
+- $M=100$ : le nombre d'actions représentées par un contrat standard sur SPY;
+- $S_t$ : le cours de clôture du SPY, en dollars par action;
+- $\Gamma_{i,t}$ : le gamma d'une option longue, soit la variation du delta
+  pour une hausse d'un dollar du SPY, mesuré en inverse de dollars;
+- $m_{i,t}$ : la masse de gamma du contrat pondérée par l'open interest.
+
+Le moteur calcule
 
 $$
-g_{i,t} = OI_{i,t} M S_t^2 \Gamma_{i,t}.
+m_{i,t}=OI_{i,t} M S_t^2 \Gamma_{i,t}.
 $$
 
-Il additionne ensuite les contrats appartenant à l'ensemble $\mathcal{O}_t$ des lignes valides observées à la date $t$ :
+Le suivi des unités est instructif. Les contrats et les actions s'annulent, et
+$S_t^2\Gamma_{i,t}$ laisse un dollar. Ainsi, $m_{i,t}$ est une mesure de
+courbure en dollars pour un mouvement proportionnel unitaire du spot. Pour la
+convention plus courante d'un mouvement de un pour cent, on définit
 
 $$
-G_t = \sum_{i \in \mathcal{O}_t} g_{i,t}.
+m_{i,t}^{1\%}=0.01m_{i,t}.
 $$
 
-Le facteur $S_t^2$ transforme une mesure locale de courbure selon la convention d'exposition monétaire retenue par l'implémentation. On obtient un facteur descriptif du marché des options. Il ne dit pas qui détient chaque contrat, si un market maker en est acheteur ou vendeur, ni quelle part a déjà été couverte.
+Le total quotidien sur l'ensemble $\mathcal O_t$ des contrats retenus est
 
-L'expression centrale du nettoyage reste volontairement simple :
+$$
+G_t=\sum_{i\in\mathcal O_t}m_{i,t},
+\qquad
+G_t^{1\%}=0.01G_t.
+$$
+
+Il ne s'agit pas du flux de couverture attendu des dealers. Pour l'estimer, il
+faudrait aussi connaître le détenteur et le signe de chaque position, le
+mouvement de prix et la règle de rééquilibrage des dealers. L'open interest est
+un stock non signé de contrats ouverts, pas un inventaire de dealer.
+
+Un call ou un put vanilla détenu à l'achat a un gamma non négatif. Le nettoyeur
+corrigé rend ce contrat de données explicite :
 
 ```python
-gamma_exposure = (
+open_interest_weighted_gamma = (
     open_interest
     * CONTRACT_MULTIPLIER
     * spot_close
@@ -42,23 +80,36 @@ gamma_exposure = (
 )
 ```
 
-Cette simplicité facilite l'audit : aucun signe lié au type call/put ou à la position du dealer n'entre dans la multiplication.
+Un gamma vanilla négatif est désormais rejeté comme donnée fournisseur
+invalide, et non interprété comme une position short. L'interface quotidienne
+contient `total_open_interest_weighted_gamma`, `near_spot_gamma_mass_share`,
+`front_expiry_gamma_mass_share`, `largest_gamma_mass_strike_distance`,
+`call_put_gamma_mass_imbalance` et `gamma_mass_concentration_index`. Les anciens
+champs net, absolu, nœud positif et nœud négatif ont disparu.
 
-## Construire une réponse au lendemain sans lookahead
+## La réponse est la variance réalisée le lendemain
 
-Pour la minute $j$ du jour de bourse $t$, on note $P_{t,j}$ le cours de clôture de la minute et $r_{t,j}$ son rendement logarithmique :
+Soit $P_{t,j}$ la clôture de la minute $j$ à la date de bourse $t$. Le rendement
+logarithmique minute $r_{t,j}$ vaut
 
 $$
-r_{t,j} = \log(P_{t,j}) - \log(P_{t,j-1}).
+r_{t,j}=\log(P_{t,j})-\log(P_{t,j-1}).
 $$
 
-Si le jour $t$ contient $n_t$ rendements minute valides, la variance réalisée quotidienne vaut
+Si la date $t$ contient $n_t$ rendements minute valides, sa variance réalisée
+$RV_t$ est
 
 $$
-RV_t = \sum_{j=1}^{n_t} r_{t,j}^2.
+RV_t=\sum_{j=1}^{n_t}r_{t,j}^2.
 $$
 
-Chaque ligne de recherche associe $G_t$ à $RV_{t+1}$. Ici, $t+1$ désigne la prochaine date de bourse observée, pas le lendemain civil. Le constructeur du jeu de données trie les dates d'exposition, décale ce calendrier d'une ligne et ne conserve une réponse que si sa date correspond à la date décalée. Le facteur du vendredi ne se retrouve donc pas associé au samedi, et le mouvement réalisé du vendredi ne fuit pas dans le prédicteur du vendredi.
+La variance réalisée est sans dimension, puisque chaque rendement logarithmique
+l'est aussi. Sa racine carrée donne la volatilité réalisée sur la séance
+échantillonnée, avant annualisation.
+
+Chaque ligne de recherche associe $G_t$ à $RV_{t+1}$. Ici, $t+1$ désigne la
+prochaine date présente dans le calendrier d'exposition, pas le lendemain
+civil. La jointure est volontairement explicite :
 
 ```python
 ordered_exposures = exposures.sort("trade_date")
@@ -73,71 +124,114 @@ aligned = exposure_calendar.join(
 )
 ```
 
-La frontière hors ligne est aussi utile que l'alignement des dates. Les deux fichiers Parquet bruts sont versionnés, l'exécution n'appelle jamais ClickHouse, et une seule commande régénère toutes les tables présentées plus bas. On réduit ainsi les écarts accidentels entre un notebook exploratoire et le résultat publié.
+Ce décalage empêche une réponse du jour d'entrer dans son propre prédicteur et
+traite les fins de semaine sans fabriquer de dates.
 
-## Ce que montrent les 20 observations
+## Ce que montre l'exécution corrigée
 
-Le facteur quotidien varie de 2,98 billions à 4,74 billions dans les unités d'exposition du moteur. La variance réalisée le lendemain suit une trajectoire bien différente.
+Le fichier brut d'options contient 168,762 lignes. Le nettoyage en conserve
+131,215. Il retire 37,547 lignes dont l'open interest est nul ou négatif, soit
+22.25% de l'entrée; 24,331 lignes conservées ont un gamma nul. Aucun gamma
+négatif n'apparaît dans l'échantillon livré.
 
-![Exposition gamma quotidienne du SPY et variance réalisée le lendemain](images/01-daily-alignment.png)
+Sur 21 dates, $G_t$ varie de \$2.98 billions à \$4.74 billions selon l'échelle
+brute d'un mouvement proportionnel unitaire. Les équivalents pour un pour cent,
+$G_t^{1\%}$, vont de \$29.81 milliards à \$47.41 milliards. Ce sont des échelles
+de masse gamma, pas des transactions prévues.
 
-Les deux séries bougent sensiblement d'un jour à l'autre, mais leurs sommets et leurs creux ne coïncident pas de façon régulière. Le graphique suggère cette absence; une statistique de rang permet de la tester précisément.
+![Masse de gamma quotidienne du SPY et variance réalisée le lendemain](images/01-daily-alignment.png)
 
-La corrélation de rang de Spearman mesure une association monotone. On définit $R(G_t)$ comme le rang de $G_t$ et $R(RV_{t+1})$ comme le rang de la variance réalisée le lendemain. En notant $\operatorname{Cov}$ la covariance et $\sigma$ l'écart-type, la statistique s'écrit
+Les deux séries varient, mais leurs sommets et creux ne coïncident pas de façon
+régulière. Le pic de variance le plus visible arrive alors que la masse de gamma
+se trouve près du milieu de sa plage observée.
+
+Pour tester une association monotone, j'utilise la corrélation de rang de
+Spearman. Soit $R(G_t)$ le rang de la masse de gamma et $R(RV_{t+1})$ celui de la
+variance réalisée le lendemain. En notant $\operatorname{Cov}$ la covariance et
+$\sigma$ l'écart-type,
 
 $$
-\rho_s = \frac{\operatorname{Cov}\left(R(G_t), R(RV_{t+1})\right)}
+\rho_s=
+\frac{\operatorname{Cov}\left(R(G_t),R(RV_{t+1})\right)}
 {\sigma_{R(G)}\sigma_{R(RV)}}.
 $$
 
-Dans cet échantillon, $\rho_s=0.030$ et la p-value bilatérale vaut 0.900. Un test de Kruskal-Wallis sur cinq groupes de gamma donne $H=4.786$ et une p-value de 0.310. Aucun des deux tests ne rejette l'hypothèse nulle d'absence de relation systématique aux seuils usuels.
+L'estimation donne $\rho_s=0.030$ avec une p-value bilatérale de $0.900$. Un
+test de Kruskal-Wallis sur cinq quintiles de masse gamma donne $H=4.786$ et une
+p-value de $0.310$. Aucun des deux tests ne rejette son hypothèse nulle aux
+seuils usuels.
 
-| Vérification | Résultat | Interprétation |
+| Vérification | Résultat | Lecture |
 |---|---:|---|
-| Observations alignées | 20 | Un mois est un échantillon de diagnostic, pas une base pour une estimation stable |
+| Observations alignées | 20 | Un mois est trop court pour une estimation stable |
 | Corrélation de rang de Spearman | 0.030 | Presque aucune association monotone |
-| P-value de Spearman | 0.900 | La relation de rang observée est compatible avec du bruit |
-| Statistique de Kruskal-Wallis | 4.786 | Les distributions par groupe diffèrent trop peu dans cet échantillon |
-| P-value de Kruskal-Wallis | 0.310 | Aucun rejet entre les cinq groupes |
+| P-value de Spearman | 0.900 | La relation de rang est compatible avec le bruit |
+| Statistique de Kruskal-Wallis | 4.786 | Les distributions par quintile sont peu séparées |
+| P-value de Kruskal-Wallis | 0.310 | Aucun rejet entre les cinq quintiles |
 
-La vue par quintile raconte la même histoire. Chaque groupe ne contient que quatre observations. La variance moyenne du lendemain monte jusqu'aux groupes intermédiaires, puis recule dans le quintile supérieur. Les intervalles bootstrap par percentile à 95% se chevauchent largement.
+![Variance réalisée le lendemain par quintile de masse gamma](images/02-quantile-variance.png)
 
-![Variance réalisée le lendemain par quintile d'exposition gamma](images/02-quantile-variance.png)
+Chaque quintile contient quatre observations. La variance moyenne du lendemain
+passe de $3.80\times10^{-5}$ dans le premier quintile à $5.91\times10^{-5}$ dans
+le troisième, puis retombe à $4.04\times10^{-5}$ dans le cinquième. Les
+intervalles bootstrap percentiles à 95% se chevauchent largement. Il n'y a pas
+de relation dose-réponse monotone.
 
-Un effet gamma monotone devrait produire une séquence plus ordonnée. La moyenne du cinquième quintile, $4.04 \times 10^{-5}$, reste sous celle du troisième, $5.91 \times 10^{-5}$. Avec quatre jours par groupe, une seule observation peut déplacer fortement l'une ou l'autre valeur.
+![Masse de gamma et variance réalisée le lendemain](images/03-factor-scatter.png)
 
-![Nuage de points entre exposition gamma et variance réalisée le lendemain](images/03-factor-scatter.png)
+La droite ajustée n'est qu'un résumé visuel. Ce n'est pas une prévision hors
+échantillon. Le nuage de points et la statistique de rang racontent la même
+histoire : ce mois fournit peu d'indices en faveur d'une relation.
 
-Le nuage de points rend le problème de taille d'échantillon très concret. La droite ajustée est descriptive, pas prédictive. La corrélation de rang affichée dans le graphique reste la statistique pertinente ici.
+## Ce qui résiste à l'audit
 
-## L'audit a trouvé une limite plus sérieuse que la p-value
+Renommer le facteur ne change ni ses valeurs, ni leur ordre, ni les quintiles,
+ni les statistiques de test. La correction change la portée économique du
+résultat. C'est précisément son intérêt.
 
-Le snapshot brut contient 168 762 lignes d'options. Le nettoyage en conserve 131 215 et exclut 37 547 lignes dont l'open interest est nul ou négatif, soit 22,25% des données. Parmi les lignes retenues, 24 331 ont un gamma nul. Ces diagnostics rendent le filtre visible au lieu de laisser l'échantillon diminuer silencieusement.
+Plusieurs facteurs structurels restent valides parce qu'ils n'exigent aucun
+signe de propriété. La part proche du spot mesure la fraction de la masse totale
+dans une bande de moneyness donnée. L'indice de concentration est un indice de
+Herfindahl-Hirschman calculé sur les parts par strike et échéance. Le déséquilibre
+calls-puts décrit la composition entre types d'options; ce n'est pas un signal
+long-short sur les dealers.
 
-L'audit du facteur compte davantage. Pour chacun des 21 snapshots quotidiens :
+Le modèle de régime configuré exige 20 observations antérieures avant
+d'attribuer une étiquette. La comparaison walk-forward demande elle aussi 20
+lignes d'entraînement avant son premier score. Après l'alignement au lendemain,
+il reste exactement 20 lignes. Les deux tables sont donc vides. Abaisser ces
+garde-fous uniquement pour obtenir un chiffre affaiblirait le protocole.
 
-- `net_gamma_exposure` est exactement égal à `absolute_gamma_exposure`;
-- la distance au principal strike de gamma négatif n'est pas définie;
-- toutes les contributions de gamma agrégées sont positives ou nulles.
+Les corrélations de rang de la première et de la seconde moitié sont $-0.188$ et
+$0.152$, avec des p-values de $0.603$ et $0.676$. Dix observations par moitié ne
+suffisent pas à établir une instabilité, mais le changement de signe n'appuie
+pas l'idée d'un effet durable.
 
-La formule suffit à l'expliquer. Le gamma standard d'un call comme celui d'un put est positif pour une option détenue à l'achat. Sans hypothèse sur le sens des positions, l'agrégat mesure une masse de gamma pondérée par l'open interest. Le qualifier de gamma dealer signé ajouterait une information absente des données.
+## Ce qu'exigerait une étude signée du gamma dealer
 
-Cette distinction modifie l'interprétation économique. Un modèle d'inventaire dealer pourrait attribuer des signes à partir du flux client, du sens des transactions ou d'une heuristique explicite. Chaque choix apporte ses propres hypothèses et erreurs de mesure. Le facteur actuel évite ces hypothèses, mais il ne peut pas tester le récit habituel opposant dealers longs gamma et dealers courts gamma.
+Une étude signée a besoin de données qui distinguent les positions des clients
+et des dealers, ou au minimum du sens des transactions accompagné d'un modèle
+d'inventaire documenté. Une règle call positif, put négatif ne résout rien : un
+call long et un put long sont tous deux longs gamma. Cette règle confond le type
+d'option et le sens de la position.
 
-## Le petit échantillon bloque aussi les annexes les plus sophistiquées
+Un meilleur protocole ajouterait plusieurs années de snapshots, enregistrerait
+l'heure exacte de l'observation, traiterait explicitement les opérations sur
+titres et les échéances, puis confronterait chaque règle de signe à des données
+réelles de flux ou d'inventaire. Le facteur non signé devrait rester le benchmark.
+Sa comparaison avec chaque estimation signée permettrait de séparer l'effet de
+la concentration observable de celui de l'hypothèse d'inventaire.
 
-Le classificateur de régime de volatilité exige 20 observations antérieures avant d'étiqueter une journée. La comparaison prédictive en walk-forward demande elle aussi 20 lignes d'entraînement avant de produire sa première prévision hors échantillon. Après l'alignement des expositions au jour $t$ avec les réponses au jour $t+1$, il reste exactement 20 lignes. Les deux tables de sortie sont donc vides par construction.
+Cette exécution de janvier ne valide pas le récit habituel sur le gamma des
+dealers. Elle fait quelque chose de plus modeste et de plus défendable : mesurer
+la courbure observable des options, respecter l'ordre temporel, publier un
+résultat nul et refuser d'inventer un signe de position.
 
-C'est le comportement souhaitable. Abaisser les seuils jusqu'à obtenir un score produirait un résultat presque dépourvu d'historique d'évaluation. Les tables vides documentent le manque de données plus honnêtement qu'un modèle ajusté sur le mois entier.
+## Références
 
-Les corrélations de rang changent aussi de signe entre les deux moitiés de l'échantillon : $-0.188$ sur les dix premières observations et $0.152$ sur les dix dernières. Leurs p-values sont 0.603 et 0.676. Cette coupure ne prouve pas une instabilité, puisque chaque moitié est minuscule, mais elle ne donne aucune raison de croire que l'estimation globale est durable.
-
-## Ce que je changerais avant d'utiliser ce facteur
-
-La prochaine exécution a besoin de plus de dates avant d'avoir besoin d'un modèle plus complexe. Plusieurs années de données permettraient de construire des régimes uniquement à partir du passé, des prévisions walk-forward et des tests leave-one-month-out qui contiennent de vraies observations.
-
-Je renommerais aussi le facteur actuel `open_interest_weighted_gamma`, afin que le code décrive exactement ce que les données étayent. Une estimation distincte du gamma dealer pourrait ensuite appliquer et tester une convention de signe documentée. La comparaison entre versions signée et non signée montrerait si un éventuel effet vient de la concentration du gamma ou de l'hypothèse d'inventaire.
-
-Enfin, l'open interest quotidien est déjà ancien pendant la séance et ne permet pas d'identifier les changements de position intrajournaliers. Pour expliquer la variance du lendemain, le contrat de données doit préciser l'horodatage des snapshots, le traitement des opérations sur titres et les effets d'échéance.
-
-L'exécution de janvier ne valide pas le récit de marché. Elle valide la discipline de recherche : respecter l'ordre temporel, exposer la convention du facteur et accepter une sortie vide ou statistiquement banale lorsque les données ne permettent pas une conclusion plus forte.
+- Fischer Black et Myron Scholes, [The Pricing of Options and Corporate Liabilities](https://doi.org/10.1086/260062), *Journal of Political Economy*, 1973.
+- Options Clearing Corporation, [Characteristics and Risks of Standardized Options](https://www.theocc.com/company-information/documents-and-archives/options-disclosure-document), mécanique des options et risques des contrats standardisés.
+- Options Industry Council, [What Is an Option?](https://www.optionseducation.org/optionsoverview/what-is-an-option), structure d'un contrat et unité standard de 100 actions.
+- Options Industry Council, [Gamma](https://www.optionseducation.org/advancedconcepts/gamma), définition et interprétation du gamma.
+- Torben G. Andersen, Tim Bollerslev, Francis X. Diebold et Paul Labys, [Modeling and Forecasting Realized Volatility](https://doi.org/10.1111/1468-0262.00418), *Econometrica*, 2003.
+- Andrea Barbon et Andrea Buraschi, [Gamma Fragility](https://doi.org/10.1093/rfs/hhaa048), *Review of Financial Studies*, 2021.

@@ -41,6 +41,13 @@ under `data/raw/`.
 - `theta`: option theta Greek
 - `rho`: option rho Greek
 
+The options schema contains no account owner, customer/dealer classification,
+trade direction, or position sign. `open_interest` is an unsigned count and
+the supplied vanilla-option `gamma` is expected to be non-negative. The
+pipeline can therefore compute open-interest-weighted gamma mass, but it
+cannot identify signed dealer gamma. Negative gamma values are rejected as
+invalid input rather than interpreted as short positions.
+
 ## Expected Date Coverage
 
 - Current shipped demo coverage: `2024-01-02` through `2024-01-31`

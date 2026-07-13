@@ -7,5 +7,6 @@ excluded_non_positive_strike_price_row_count,0
 excluded_non_positive_spot_close_row_count,0
 excluded_expired_contract_row_count,0
 excluded_invalid_option_type_row_count,0
+excluded_negative_gamma_row_count,0
 surviving_invalid_bid_ask_row_count,0
 surviving_zero_gamma_row_count,24331

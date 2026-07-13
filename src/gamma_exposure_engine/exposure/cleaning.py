@@ -1,11 +1,14 @@
-"""Clean option rows and compute contract-level gamma exposure.
+"""Clean option rows and compute open-interest-weighted gamma mass.
 
 The exposure layer expects a pre-enriched frame where each option snapshot row
 already carries the daily underlying close in ``spot_close``. It removes rows
 that are structurally unsafe for aggregation, preserves diagnostic flags on
-the surviving rows, and applies the documented gamma exposure convention:
+the surviving rows, and applies the documented unsigned gamma convention:
 
-``gamma_exposure = open_interest * contract_multiplier * spot_close^2 * gamma``
+``open_interest_weighted_gamma = open_interest * multiplier * spot_close^2 * gamma``
+
+The input has no owner or dealer-position field. This module therefore does
+not attach a position sign or claim to estimate dealer gamma exposure.
 """
 
 from __future__ import annotations
@@ -44,6 +47,7 @@ NON_POSITIVE_STRIKE_PRICE_COLUMN: str = "_excluded_non_positive_strike_price"
 NON_POSITIVE_SPOT_CLOSE_COLUMN: str = "_excluded_non_positive_spot_close"
 EXPIRED_CONTRACT_COLUMN: str = "_excluded_expired_contract"
 INVALID_OPTION_TYPE_COLUMN: str = "_excluded_invalid_option_type"
+NEGATIVE_GAMMA_COLUMN: str = "_excluded_negative_gamma"
 KEEP_ROW_COLUMN: str = "_keep_row"
 DIAGNOSTIC_NAME_COLUMN: str = "diagnostic_name"
 ROW_COUNT_COLUMN: str = "row_count"
@@ -54,6 +58,7 @@ INTERNAL_STATE_COLUMNS: tuple[str, ...] = (
     NON_POSITIVE_SPOT_CLOSE_COLUMN,
     EXPIRED_CONTRACT_COLUMN,
     INVALID_OPTION_TYPE_COLUMN,
+    NEGATIVE_GAMMA_COLUMN,
     KEEP_ROW_COLUMN,
 )
 EXCLUSION_DIAGNOSTIC_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -69,6 +74,7 @@ EXCLUSION_DIAGNOSTIC_COLUMNS: tuple[tuple[str, str], ...] = (
     ("excluded_non_positive_spot_close_row_count", NON_POSITIVE_SPOT_CLOSE_COLUMN),
     ("excluded_expired_contract_row_count", EXPIRED_CONTRACT_COLUMN),
     ("excluded_invalid_option_type_row_count", INVALID_OPTION_TYPE_COLUMN),
+    ("excluded_negative_gamma_row_count", NEGATIVE_GAMMA_COLUMN),
 )
 SURVIVING_WARNING_DIAGNOSTIC_COLUMNS: tuple[tuple[str, str], ...] = (
     ("surviving_invalid_bid_ask_row_count", "has_invalid_bid_ask"),
@@ -83,7 +89,7 @@ __all__ = [
 
 
 def clean_options_snapshot(frame: pl.DataFrame) -> pl.DataFrame:
-    """Return cleaned option rows with contract-level gamma exposure.
+    """Return cleaned rows with open-interest-weighted gamma mass.
 
     Args:
         frame:
@@ -97,30 +103,32 @@ def clean_options_snapshot(frame: pl.DataFrame) -> pl.DataFrame:
     Returns:
         pl.DataFrame: Structurally safe rows for aggregation, with
         quote-validity and zero-gamma diagnostics retained on surviving rows
-        and contract-level exposure fields added.
+        and contract-level gamma-mass fields added. Negative gamma rows are
+        excluded because standard long vanilla call and put gamma is
+        non-negative; the raw schema contains no position sign.
     """
 
     cleaning_state = _build_cleaning_state(frame)
-    cleaned = cleaning_state.filter(pl.col(KEEP_ROW_COLUMN)).drop(INTERNAL_STATE_COLUMNS)
+    cleaned = cleaning_state.filter(pl.col(KEEP_ROW_COLUMN)).drop(
+        INTERNAL_STATE_COLUMNS
+    )
     cleaned = cleaned.with_columns(
         # Days to expiry is a simple calendar-day difference.
-        (pl.col("expiry_date") - pl.col("trade_date")).dt.total_days().alias(
-            "days_to_expiry"
-        ),
+        (pl.col("expiry_date") - pl.col("trade_date"))
+        .dt.total_days()
+        .alias("days_to_expiry"),
         # Moneyness is strike scaled by spot and centered at zero for at-the-
         # money contracts.
-        ((pl.col("strike_price") / pl.col("spot_close")) - 1.0).alias(
-            "moneyness"
-        ),
-        # Contract gamma exposure follows the agreed convention from the task
-        # spec: OI * multiplier * spot^2 * gamma.
+        ((pl.col("strike_price") / pl.col("spot_close")) - 1.0).alias("moneyness"),
+        # This is unsigned market gamma mass, not dealer inventory exposure:
+        # OI-weighted gamma = OI * multiplier * spot^2 * gamma.
         (
             pl.col("open_interest")
             * CONTRACT_MULTIPLIER
             * pl.col("spot_close")
             * pl.col("spot_close")
             * pl.col("gamma")
-        ).alias("gamma_exposure"),
+        ).alias("open_interest_weighted_gamma"),
     )
     return cleaned
 
@@ -181,52 +189,74 @@ def _build_cleaning_state(frame: pl.DataFrame) -> pl.DataFrame:
         ).alias(MISSING_ESSENTIAL_COLUMN)
     )
     cleaning_state = cleaning_state.with_columns(
-        (
-            (~pl.col(MISSING_ESSENTIAL_COLUMN))
-            & (pl.col("open_interest") <= 0)
-        ).alias(NON_POSITIVE_OPEN_INTEREST_COLUMN)
+        ((~pl.col(MISSING_ESSENTIAL_COLUMN)) & (pl.col("open_interest") <= 0)).alias(
+            NON_POSITIVE_OPEN_INTEREST_COLUMN
+        )
     )
     cleaning_state = cleaning_state.with_columns(
         (
-            (~pl.any_horizontal(
-                pl.col(MISSING_ESSENTIAL_COLUMN),
-                pl.col(NON_POSITIVE_OPEN_INTEREST_COLUMN),
-            ))
+            (
+                ~pl.any_horizontal(
+                    pl.col(MISSING_ESSENTIAL_COLUMN),
+                    pl.col(NON_POSITIVE_OPEN_INTEREST_COLUMN),
+                )
+            )
             & (pl.col("strike_price") <= MINIMUM_VALID_STRIKE_PRICE)
         ).alias(NON_POSITIVE_STRIKE_PRICE_COLUMN)
     )
     cleaning_state = cleaning_state.with_columns(
         (
-            (~pl.any_horizontal(
-                pl.col(MISSING_ESSENTIAL_COLUMN),
-                pl.col(NON_POSITIVE_OPEN_INTEREST_COLUMN),
-                pl.col(NON_POSITIVE_STRIKE_PRICE_COLUMN),
-            ))
+            (
+                ~pl.any_horizontal(
+                    pl.col(MISSING_ESSENTIAL_COLUMN),
+                    pl.col(NON_POSITIVE_OPEN_INTEREST_COLUMN),
+                    pl.col(NON_POSITIVE_STRIKE_PRICE_COLUMN),
+                )
+            )
             & (pl.col("spot_close") <= MINIMUM_VALID_SPOT_CLOSE)
         ).alias(NON_POSITIVE_SPOT_CLOSE_COLUMN)
     )
     cleaning_state = cleaning_state.with_columns(
         (
-            (~pl.any_horizontal(
-                pl.col(MISSING_ESSENTIAL_COLUMN),
-                pl.col(NON_POSITIVE_OPEN_INTEREST_COLUMN),
-                pl.col(NON_POSITIVE_STRIKE_PRICE_COLUMN),
-                pl.col(NON_POSITIVE_SPOT_CLOSE_COLUMN),
-            ))
+            (
+                ~pl.any_horizontal(
+                    pl.col(MISSING_ESSENTIAL_COLUMN),
+                    pl.col(NON_POSITIVE_OPEN_INTEREST_COLUMN),
+                    pl.col(NON_POSITIVE_STRIKE_PRICE_COLUMN),
+                    pl.col(NON_POSITIVE_SPOT_CLOSE_COLUMN),
+                )
+            )
             & (pl.col("expiry_date") < pl.col("trade_date"))
         ).alias(EXPIRED_CONTRACT_COLUMN)
     )
     cleaning_state = cleaning_state.with_columns(
         (
-            (~pl.any_horizontal(
-                pl.col(MISSING_ESSENTIAL_COLUMN),
-                pl.col(NON_POSITIVE_OPEN_INTEREST_COLUMN),
-                pl.col(NON_POSITIVE_STRIKE_PRICE_COLUMN),
-                pl.col(NON_POSITIVE_SPOT_CLOSE_COLUMN),
-                pl.col(EXPIRED_CONTRACT_COLUMN),
-            ))
+            (
+                ~pl.any_horizontal(
+                    pl.col(MISSING_ESSENTIAL_COLUMN),
+                    pl.col(NON_POSITIVE_OPEN_INTEREST_COLUMN),
+                    pl.col(NON_POSITIVE_STRIKE_PRICE_COLUMN),
+                    pl.col(NON_POSITIVE_SPOT_CLOSE_COLUMN),
+                    pl.col(EXPIRED_CONTRACT_COLUMN),
+                )
+            )
             & (~pl.col("option_type").is_in(VALID_OPTION_TYPES))
         ).alias(INVALID_OPTION_TYPE_COLUMN)
+    )
+    cleaning_state = cleaning_state.with_columns(
+        (
+            (
+                ~pl.any_horizontal(
+                    pl.col(MISSING_ESSENTIAL_COLUMN),
+                    pl.col(NON_POSITIVE_OPEN_INTEREST_COLUMN),
+                    pl.col(NON_POSITIVE_STRIKE_PRICE_COLUMN),
+                    pl.col(NON_POSITIVE_SPOT_CLOSE_COLUMN),
+                    pl.col(EXPIRED_CONTRACT_COLUMN),
+                    pl.col(INVALID_OPTION_TYPE_COLUMN),
+                )
+            )
+            & (pl.col("gamma") < 0.0)
+        ).alias(NEGATIVE_GAMMA_COLUMN)
     )
     cleaning_state = cleaning_state.with_columns(
         (
@@ -237,6 +267,7 @@ def _build_cleaning_state(frame: pl.DataFrame) -> pl.DataFrame:
                 pl.col(NON_POSITIVE_SPOT_CLOSE_COLUMN),
                 pl.col(EXPIRED_CONTRACT_COLUMN),
                 pl.col(INVALID_OPTION_TYPE_COLUMN),
+                pl.col(NEGATIVE_GAMMA_COLUMN),
             )
         ).alias(KEEP_ROW_COLUMN),
         # Keep diagnostics on surviving rows so the report can separate rows

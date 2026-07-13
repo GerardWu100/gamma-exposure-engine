@@ -7,7 +7,7 @@
 - `offline_pipeline.py`
   - loads local raw Parquet inputs
   - builds spot close and joins options with spot
-  - runs cleaning and gamma-factor construction
+  - runs cleaning and unsigned gamma-mass factor construction
   - computes intraday response metrics and pinning proxy
   - builds aligned research dataset
   - runs descriptive, inferential, regime, robustness, and predictive analyses

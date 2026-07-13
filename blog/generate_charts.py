@@ -57,7 +57,9 @@ def plot_daily_alignment() -> None:
 
     frame = pl.read_parquet(DATA_DIR / "research_dataset.parquet").sort("trade_date")
     dates = frame.get_column("trade_date").to_list()
-    gamma = frame.get_column("net_gamma_exposure").to_numpy() / GAMMA_SCALE
+    gamma = (
+        frame.get_column("total_open_interest_weighted_gamma").to_numpy() / GAMMA_SCALE
+    )
     variance = (
         frame.get_column("next_day_realized_variance").to_numpy() * VARIANCE_SCALE
     )
@@ -70,7 +72,7 @@ def plot_daily_alignment() -> None:
         color=CYAN,
         marker="o",
         linewidth=2.2,
-        label="Day-t gamma exposure",
+        label="Day-t gamma mass",
     )[0]
     variance_line = variance_axis.plot(
         dates,
@@ -81,9 +83,9 @@ def plot_daily_alignment() -> None:
         label="Next-day realized variance",
     )[0]
 
-    gamma_axis.set_title("SPY gamma exposure and the following day's realized variance")
+    gamma_axis.set_title("SPY gamma mass and the following day's realized variance")
     gamma_axis.set_xlabel("Exposure date (2024)")
-    gamma_axis.set_ylabel("Gamma exposure (trillions)", color=CYAN)
+    gamma_axis.set_ylabel("Open-interest-weighted gamma (trillions)", color=CYAN)
     variance_axis.set_ylabel("Realized variance (×10⁻⁴)", color=AMBER)
     gamma_axis.grid(axis="y")
     gamma_axis.xaxis.set_major_locator(mdates.WeekdayLocator(interval=1))
@@ -120,8 +122,10 @@ def plot_quantile_summary() -> None:
         elinewidth=1.7,
         capsize=5,
     )
-    axis.set_title("Next-day variance does not increase monotonically across gamma quintiles")
-    axis.set_xlabel("Gamma-exposure quintile (low to high)")
+    axis.set_title(
+        "Next-day variance does not increase monotonically across gamma quintiles"
+    )
+    axis.set_xlabel("Open-interest-weighted gamma quintile (low to high)")
     axis.set_ylabel("Mean next-day realized variance (×10⁻⁴)")
     axis.set_xticks(buckets)
     axis.grid(axis="y")
@@ -142,7 +146,9 @@ def plot_factor_scatter() -> None:
     """Plot the aligned factor-target observations with a descriptive fit line."""
 
     frame = pl.read_parquet(DATA_DIR / "research_dataset.parquet")
-    gamma = frame.get_column("net_gamma_exposure").to_numpy() / GAMMA_SCALE
+    gamma = (
+        frame.get_column("total_open_interest_weighted_gamma").to_numpy() / GAMMA_SCALE
+    )
     variance = (
         frame.get_column("next_day_realized_variance").to_numpy() * VARIANCE_SCALE
     )
@@ -161,8 +167,8 @@ def plot_factor_scatter() -> None:
         alpha=0.9,
     )
     axis.plot(fit_x, fit_y, color=AMBER, linewidth=2.0, label="Descriptive linear fit")
-    axis.set_title("Twenty aligned observations show little gamma-variance association")
-    axis.set_xlabel("Day-t gamma exposure (trillions)")
+    axis.set_title("Twenty observations show little gamma-mass/variance association")
+    axis.set_xlabel("Day-t open-interest-weighted gamma (trillions)")
     axis.set_ylabel("Next-day realized variance (×10⁻⁴)")
     axis.grid()
     axis.legend(frameon=False)
@@ -172,7 +178,11 @@ def plot_factor_scatter() -> None:
         "Spearman ρ = 0.030\np = 0.900\nn = 20",
         transform=axis.transAxes,
         verticalalignment="top",
-        bbox={"boxstyle": "round,pad=0.45", "facecolor": PALE_BLUE, "edgecolor": "none"},
+        bbox={
+            "boxstyle": "round,pad=0.45",
+            "facecolor": PALE_BLUE,
+            "edgecolor": "none",
+        },
     )
     figure.savefig(IMAGE_DIR / "03-factor-scatter.png", dpi=FIGURE_DPI)
     plt.close(figure)

@@ -20,8 +20,8 @@ def test_build_research_dataset_joins_next_observed_exposure_day() -> None:
     exposures = pl.DataFrame(
         {
             "trade_date": [date(2024, 1, 5), date(2024, 1, 8)],
-            "net_gamma_exposure": [100.0, 200.0],
-            "absolute_gamma_exposure": [150.0, 250.0],
+            "total_open_interest_weighted_gamma": [100.0, 200.0],
+            "near_spot_gamma_mass_share": [0.6, 0.7],
         }
     )
     responses = pl.DataFrame(
@@ -38,8 +38,8 @@ def test_build_research_dataset_joins_next_observed_exposure_day() -> None:
 
     assert dataset.columns == [
         "trade_date",
-        "net_gamma_exposure",
-        "absolute_gamma_exposure",
+        "total_open_interest_weighted_gamma",
+        "near_spot_gamma_mass_share",
         "response_trade_date",
         "next_day_realized_variance",
         "next_day_realized_volatility",
@@ -48,8 +48,8 @@ def test_build_research_dataset_joins_next_observed_exposure_day() -> None:
     ]
     assert dataset["trade_date"].to_list() == [date(2024, 1, 5)]
     assert dataset["response_trade_date"].to_list() == [date(2024, 1, 8)]
-    assert dataset["net_gamma_exposure"].to_list() == [100.0]
-    assert dataset["absolute_gamma_exposure"].to_list() == [150.0]
+    assert dataset["total_open_interest_weighted_gamma"].to_list() == [100.0]
+    assert dataset["near_spot_gamma_mass_share"].to_list() == [0.6]
     assert dataset["next_day_realized_variance"].to_list() == [0.2]
     assert dataset["next_day_realized_volatility"].to_list() == [0.4]
     assert dataset["next_day_abnormal_volume_score"].to_list() == [1.7]
@@ -62,7 +62,7 @@ def test_build_research_dataset_does_not_join_same_day_response() -> None:
     exposures = pl.DataFrame(
         {
             "trade_date": [date(2024, 1, 2)],
-            "net_gamma_exposure": [100.0],
+            "total_open_interest_weighted_gamma": [100.0],
         }
     )
     responses = pl.DataFrame(
@@ -76,7 +76,7 @@ def test_build_research_dataset_does_not_join_same_day_response() -> None:
 
     assert dataset.columns == [
         "trade_date",
-        "net_gamma_exposure",
+        "total_open_interest_weighted_gamma",
         "response_trade_date",
         "next_day_realized_variance",
     ]
@@ -93,7 +93,7 @@ def test_build_research_dataset_drops_over_jump_on_sparse_response_dates() -> No
                 date(2024, 1, 3),
                 date(2024, 1, 4),
             ],
-            "net_gamma_exposure": [10.0, 20.0, 30.0],
+            "total_open_interest_weighted_gamma": [10.0, 20.0, 30.0],
         }
     )
     responses = pl.DataFrame(
@@ -107,7 +107,7 @@ def test_build_research_dataset_drops_over_jump_on_sparse_response_dates() -> No
 
     assert dataset.columns == [
         "trade_date",
-        "net_gamma_exposure",
+        "total_open_interest_weighted_gamma",
         "response_trade_date",
         "next_day_realized_variance",
     ]

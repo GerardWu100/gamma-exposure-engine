@@ -58,7 +58,7 @@ def test_run_offline_analysis_command_invokes_pipeline_with_overrides(
             "--symbol",
             "SPY",
             "--factor",
-            "net_gamma_exposure",
+            "total_open_interest_weighted_gamma",
             "--target",
             "next_day_realized_variance",
             "--raw-dir",
@@ -73,7 +73,7 @@ def test_run_offline_analysis_command_invokes_pipeline_with_overrides(
         "end_date": "2024-01-31",
         "output_dir": tmp_path,
         "symbol": "SPY",
-        "factor_name": "net_gamma_exposure",
+        "factor_name": "total_open_interest_weighted_gamma",
         "target_name": "next_day_realized_variance",
         "raw_data_dir": tmp_path / "data" / "raw",
     }
@@ -107,7 +107,9 @@ def test_refresh_raw_cache_command_invokes_refresh_builder(
         )
         return {"symbol": symbol, "datasets": {"intraday_bars": {"row_count": 1}}}
 
-    monkeypatch.setattr("gamma_exposure_engine.cli.load_settings", lambda: _FakeSettings())
+    monkeypatch.setattr(
+        "gamma_exposure_engine.cli.load_settings", lambda: _FakeSettings()
+    )
     monkeypatch.setattr(
         "gamma_exposure_engine.cli.refresh_raw_cache_from_clickhouse",
         fake_refresh_raw_cache_from_clickhouse,

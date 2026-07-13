@@ -1,4 +1,4 @@
-"""Tests for option cleaning and contract-level gamma exposure math.
+"""Tests for option cleaning and open-interest-weighted gamma math.
 
 The exposure layer should remove rows that cannot support exposure math, flag
 diagnostic states on surviving rows, and compute deterministic contract-level
@@ -18,7 +18,9 @@ from gamma_exposure_engine.exposure.cleaning import (
 )
 
 
-def test_clean_options_snapshot_drops_missing_essentials_and_non_positive_open_interest() -> None:
+def test_clean_options_snapshot_drops_missing_essentials_and_non_positive_open_interest() -> (
+    None
+):
     """Rows missing essentials or with non-positive open interest are removed."""
 
     frame = pl.DataFrame(
@@ -41,7 +43,7 @@ def test_clean_options_snapshot_drops_missing_essentials_and_non_positive_open_i
     assert cleaned.height == 1
     assert cleaned["days_to_expiry"].to_list() == [17]
     assert cleaned["moneyness"].to_list() == [(470.0 / 472.0) - 1.0]
-    assert cleaned["gamma_exposure"].to_list() == [
+    assert cleaned["open_interest_weighted_gamma"].to_list() == [
         10 * CONTRACT_MULTIPLIER * 472.0 * 472.0 * 0.02
     ]
 
@@ -143,7 +145,37 @@ def test_clean_options_snapshot_flags_zero_gamma_rows() -> None:
 
     assert cleaned.height == 1
     assert cleaned["is_zero_gamma"].to_list() == [True]
-    assert cleaned["gamma_exposure"].to_list() == [0.0]
+    assert cleaned["open_interest_weighted_gamma"].to_list() == [0.0]
+
+
+def test_clean_options_snapshot_excludes_negative_vendor_gamma() -> None:
+    """Negative vanilla gamma is invalid data, not a dealer-position sign."""
+
+    frame = pl.DataFrame(
+        {
+            "symbol": ["SPY"],
+            "trade_date": [date(2024, 1, 2)],
+            "expiry_date": [date(2024, 1, 19)],
+            "strike_price": [470.0],
+            "option_type": ["p"],
+            "bid": [1.0],
+            "ask": [1.2],
+            "open_interest": [10],
+            "gamma": [-0.02],
+            "spot_close": [472.0],
+        }
+    )
+
+    assert clean_options_snapshot(frame).is_empty()
+    diagnostics = summarize_cleaning_diagnostics(frame)
+    counts = dict(
+        zip(
+            diagnostics["diagnostic_name"].to_list(),
+            diagnostics["row_count"].to_list(),
+            strict=True,
+        )
+    )
+    assert counts["excluded_negative_gamma_row_count"] == 1
 
 
 def test_clean_options_snapshot_flags_invalid_bid_ask_rows() -> None:
@@ -213,5 +245,6 @@ def test_summarize_cleaning_diagnostics_counts_exclusions_and_surviving_flags() 
     assert counts["excluded_non_positive_strike_price_row_count"] == 1
     assert counts["excluded_expired_contract_row_count"] == 1
     assert counts["excluded_invalid_option_type_row_count"] == 1
+    assert counts["excluded_negative_gamma_row_count"] == 0
     assert counts["surviving_invalid_bid_ask_row_count"] == 1
     assert counts["surviving_zero_gamma_row_count"] == 1

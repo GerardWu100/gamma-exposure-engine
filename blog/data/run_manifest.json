@@ -2,13 +2,13 @@
   "symbol": "SPY",
   "start_date": "2024-01-02",
   "end_date": "2024-01-31",
-  "factor_name": "net_gamma_exposure",
+  "factor_name": "total_open_interest_weighted_gamma",
   "target_name": "next_day_realized_variance",
   "raw_data_dir": "/home/ai4000/projects/one-time-projects/gamma-exposure-engine/data/raw",
   "artifacts": {
     "cleaning_diagnostics": {
       "path": "blog/data/cleaning_diagnostics.csv",
-      "row_count": 10
+      "row_count": 11
     },
     "gamma_factors": {
       "path": "blog/data/gamma_factors.csv",
@@ -56,11 +56,11 @@
     },
     "factor_target_correlations": {
       "path": "blog/data/factor_target_correlations.csv",
-      "row_count": 8
+      "row_count": 6
     },
     "factor_factor_correlations": {
       "path": "blog/data/factor_factor_correlations.csv",
-      "row_count": 8
+      "row_count": 6
     },
     "expanding_window_diagnostics": {
       "path": "blog/data/expanding_window_diagnostics.csv",

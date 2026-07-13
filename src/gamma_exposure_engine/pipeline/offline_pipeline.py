@@ -41,7 +41,9 @@ from gamma_exposure_engine.research.predictive import (
     build_predictive_baseline_comparison,
 )
 from gamma_exposure_engine.research.regime import build_regime_quantile_summary
-from gamma_exposure_engine.research.statistical_tests import build_statistical_test_summary
+from gamma_exposure_engine.research.statistical_tests import (
+    build_statistical_test_summary,
+)
 from gamma_exposure_engine.settings import load_settings
 
 TRADE_DATE_COLUMN: str = "trade_date"
@@ -51,7 +53,7 @@ SPOT_CLOSE_COLUMN: str = "spot_close"
 RESPONSE_TRADE_DATE_COLUMN: str = "response_trade_date"
 NEXT_DAY_PREFIX: str = "next_day_"
 STRIKE_PRICE_COLUMN: str = "strike_price"
-STRIKE_ABS_GAMMA_EXPOSURE_COLUMN: str = "strike_abs_gamma_exposure"
+STRIKE_GAMMA_MASS_COLUMN: str = "strike_open_interest_weighted_gamma"
 
 
 def run_offline_analysis(
@@ -299,11 +301,11 @@ def select_pinning_candidates(
     cleaned_options: pl.DataFrame,
     candidate_count: int,
 ) -> pl.DataFrame:
-    """Choose the top absolute strike-gamma nodes for each trade date."""
+    """Choose the largest strike-level gamma-mass nodes for each trade date."""
 
     strike_map = build_strike_gamma_map(cleaned_options)
     ordered_strikes = strike_map.sort(
-        [TRADE_DATE_COLUMN, STRIKE_ABS_GAMMA_EXPOSURE_COLUMN, STRIKE_PRICE_COLUMN],
+        [TRADE_DATE_COLUMN, STRIKE_GAMMA_MASS_COLUMN, STRIKE_PRICE_COLUMN],
         descending=[False, True, False],
     )
     return (
