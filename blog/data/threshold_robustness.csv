@@ -1,0 +1,4 @@
+near_spot_share_threshold,at_or_above_threshold_count,below_threshold_count,at_or_above_threshold_target_mean,below_threshold_target_mean,target_mean_spread
+0.2,19,1,0.000049658174359301734,0.00003969217109279404,9.966003266507696e-6
+0.4,0,20,,0.000049159874195976345,
+0.6,0,20,,0.000049159874195976345,

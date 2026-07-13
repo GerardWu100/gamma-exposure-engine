@@ -1,0 +1,3 @@
+test_name,test_statistic,p_value,sample_size
+spearman_rank_correlation,0.030075187969924807,0.8998365956859304,20
+kruskal_wallis,4.785714285714278,0.30999944822254505,20
