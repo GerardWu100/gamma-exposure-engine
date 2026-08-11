@@ -87,7 +87,20 @@ def build_quantile_summary(
         msg = "quantiles must be at least 1"
         raise ValueError(msg)
 
-    ordered_frame = _sort_frame_for_quantiles(frame=frame, factor_name=factor_name)
+    # Apply the same pairwise cleaning pass the inferential helpers use, so a
+    # row missing either column cannot reach a bucket. Without this, Polars
+    # sorts nulls first and NaN last, which silently files an unusable row into
+    # the lowest or highest bucket and reports its target mean as if it were a
+    # real reading. It also keeps ``observation_count`` equal to the number of
+    # rows that actually contribute to ``target_mean``.
+    clean_frame = frame.drop_nulls([factor_name, target_name]).filter(
+        pl.col(factor_name).is_finite(),
+        pl.col(target_name).is_finite(),
+    )
+
+    ordered_frame = _sort_frame_for_quantiles(
+        frame=clean_frame, factor_name=factor_name
+    )
     if ordered_frame.height == 0:
         return pl.DataFrame(
             {

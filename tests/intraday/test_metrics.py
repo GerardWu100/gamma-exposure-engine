@@ -14,6 +14,7 @@ import polars as pl
 import pytest
 
 from gamma_exposure_engine.intraday.metrics import (
+    _build_minute_bars,
     attach_pinning_distance,
     build_daily_intraday_metrics,
 )
@@ -241,3 +242,30 @@ def test_attach_pinning_distance_uses_previous_day_candidates_and_normalizes() -
     assert isnan(pinning_distance[0])
     assert pinning_distance[1] == pytest.approx(4.0 / 104.0)
     assert pinning_distance[2] == pytest.approx(2.0 / 96.0)
+
+
+def test_build_minute_bars_keeps_afternoon_minutes_distinct() -> None:
+    """Minute-of-day must not wrap around, so late-session bars stay separate.
+
+    Polars returns Int8 for both ``dt.hour()`` and ``dt.minute()``. Multiplying
+    the raw Int8 hour by 60 overflows past 127, which folds 09:00 onto 28 and
+    15:30 onto -94 and merges unrelated clock minutes into one bucket.
+    """
+
+    frame = pl.DataFrame(
+        {
+            "ts": [
+                datetime(2024, 1, 2, 4, 44),
+                datetime(2024, 1, 2, 9, 0),
+                datetime(2024, 1, 2, 15, 30),
+                datetime(2024, 1, 2, 19, 59),
+            ],
+            "open": [100.0, 100.0, 100.0, 100.0],
+            "close": [100.0, 100.0, 100.0, 100.0],
+            "volume": [1.0, 1.0, 1.0, 1.0],
+        }
+    )
+
+    minute_bars = _build_minute_bars(frame)
+
+    assert minute_bars["minute_of_day"].to_list() == [284, 540, 930, 1199]

@@ -268,3 +268,57 @@ def test_leave_one_month_out_returns_one_row_per_month() -> None:
         "observation_count",
     ]
     assert result.height == 3
+
+
+def test_build_quantile_summary_excludes_rows_missing_either_column() -> None:
+    """Rows missing the factor or the target must not reach a bucket.
+
+    Polars sorts nulls first and NaN last. Without a cleaning pass those rows
+    are filed into the lowest or highest bucket and their target mean is
+    reported as if it were a real reading, and ``observation_count`` counts
+    rows that never contributed to ``target_mean``.
+    """
+
+    frame = pl.DataFrame(
+        {
+            "trade_date": [date(2024, 1, day) for day in range(2, 10)],
+            "factor": [None, float("nan"), 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            "target": [50.0, 50.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        }
+    )
+
+    result = build_quantile_summary(
+        frame=frame,
+        factor_name="factor",
+        target_name="target",
+        quantiles=2,
+    )
+
+    # Only the six clean rows survive, so the unusable 50.0 targets appear
+    # nowhere in the summary and the counts add up to six.
+    assert result["observation_count"].to_list() == [3, 3]
+    assert result["target_mean"].to_list() == [2.0, 5.0]
+
+
+def test_build_quantile_summary_reports_counts_matching_the_mean() -> None:
+    """A bucket's observation count must match the rows behind its mean."""
+
+    frame = pl.DataFrame(
+        {
+            "trade_date": [date(2024, 1, day) for day in range(2, 6)],
+            "factor": [1.0, 2.0, 3.0, 4.0],
+            "target": [None, None, 3.0, 4.0],
+        }
+    )
+
+    result = build_quantile_summary(
+        frame=frame,
+        factor_name="factor",
+        target_name="target",
+        quantiles=2,
+    )
+
+    # The two null-target rows are dropped, so a single bucket of two rows is
+    # left rather than a bucket reporting a null mean over two observations.
+    assert result["target_mean"].to_list() == [3.0, 4.0]
+    assert result["observation_count"].to_list() == [1, 1]

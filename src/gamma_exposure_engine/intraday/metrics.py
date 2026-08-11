@@ -38,6 +38,7 @@ EXPECTED_TOTAL_VOLUME_COLUMN: str = "expected_total_volume"
 BASELINE_MINUTE_VOLUME_COLUMN: str = "baseline_minute_volume"
 MISSING_NUMERIC: float = float("nan")
 ZERO_FLOAT: float = 0.0
+MINUTES_PER_HOUR: int = 60
 
 __all__ = ["attach_pinning_distance", "build_daily_intraday_metrics"]
 
@@ -164,9 +165,14 @@ def _build_minute_bars(frame: pl.DataFrame) -> pl.DataFrame:
 
     minute_bars = frame.sort(TIMESTAMP_COLUMN).with_columns(
         pl.col(TIMESTAMP_COLUMN).dt.date().alias(TRADE_DATE_COLUMN),
-        (pl.col(TIMESTAMP_COLUMN).dt.hour() * 60 + pl.col(TIMESTAMP_COLUMN).dt.minute())
-        .cast(pl.Int32)
-        .alias(MINUTE_OF_DAY_COLUMN),
+        # Cast the hour and minute parts to Int32 before the arithmetic. Polars
+        # returns Int8 for both parts, and an Int8 product wraps around at 127,
+        # so `hour * 60` alone would fold 09:00 onto 28 and 15:30 onto -94 and
+        # merge unrelated clock minutes into the same bucket.
+        (
+            pl.col(TIMESTAMP_COLUMN).dt.hour().cast(pl.Int32) * MINUTES_PER_HOUR
+            + pl.col(TIMESTAMP_COLUMN).dt.minute().cast(pl.Int32)
+        ).alias(MINUTE_OF_DAY_COLUMN),
     )
     return minute_bars
 
