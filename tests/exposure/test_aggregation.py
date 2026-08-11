@@ -6,7 +6,6 @@ from datetime import date
 
 import polars as pl
 import pytest
-
 from gamma_exposure_engine.exposure.aggregation import (
     build_daily_gamma_factors,
     build_expiry_gamma_map,

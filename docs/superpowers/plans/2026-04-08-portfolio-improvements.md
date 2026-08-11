@@ -178,22 +178,24 @@ And update the assertions in `test_load_settings_uses_explicit_paths_and_does_no
 In `tests/test_cli_smoke.py`, update the `make_settings()` helper to include the new `ResearchSettings` fields:
 
 ```python
-        research=ResearchSettings(
-            near_spot_band_width=0.02,
-            abnormal_volume_window=20,
-            quantile_count=5,
-            pinning_candidate_count=5,
-            predictive_min_train_size=20,
-            near_spot_share_thresholds=(0.2, 0.4, 0.6),
-            default_factor_name="net_gamma_exposure",
-            default_target_name="next_day_realized_variance",
-            report_filename_template="{symbol}_{start_date}_{end_date}_gamma_report.html",
-            bootstrap_iterations=1000,
-            bootstrap_confidence_level=0.95,
-            regime_lookback_window=20,
-            ridge_alpha_candidates=(0.01, 0.1, 1.0, 10.0, 100.0),
-            robustness_band_widths=(0.01, 0.03, 0.05),
-        ),
+research = (
+    ResearchSettings(
+        near_spot_band_width=0.02,
+        abnormal_volume_window=20,
+        quantile_count=5,
+        pinning_candidate_count=5,
+        predictive_min_train_size=20,
+        near_spot_share_thresholds=(0.2, 0.4, 0.6),
+        default_factor_name="net_gamma_exposure",
+        default_target_name="next_day_realized_variance",
+        report_filename_template="{symbol}_{start_date}_{end_date}_gamma_report.html",
+        bootstrap_iterations=1000,
+        bootstrap_confidence_level=0.95,
+        regime_lookback_window=20,
+        ridge_alpha_candidates=(0.01, 0.1, 1.0, 10.0, 100.0),
+        robustness_band_widths=(0.01, 0.03, 0.05),
+    ),
+)
 ```
 
 Do the same for the `test_run_pipeline_writes_html_report_from_real_pipeline` function's inline `ResearchSettings`.
@@ -244,7 +246,18 @@ def test_ci_bounds_bracket_point_estimate() -> None:
     frame = pl.DataFrame(
         {
             "factor_value": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
-            "target_value": [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0],
+            "target_value": [
+                10.0,
+                20.0,
+                30.0,
+                40.0,
+                50.0,
+                60.0,
+                70.0,
+                80.0,
+                90.0,
+                100.0,
+            ],
         }
     )
 
@@ -488,9 +501,7 @@ def _collect_bootstrap_means(
     row_count = frame.height
 
     # Pre-allocate collection lists for each bucket.
-    bootstrap_means: dict[int, list[float]] = {
-        bucket: [] for bucket in bucket_labels
-    }
+    bootstrap_means: dict[int, list[float]] = {bucket: [] for bucket in bucket_labels}
 
     for _ in range(bootstrap_iterations):
         # Resample row indices with replacement.
@@ -514,9 +525,7 @@ def _collect_bootstrap_means(
         for bucket in bucket_labels:
             # If a bucket disappears in a resample, use NaN so it does not
             # bias the percentile calculation.
-            bootstrap_means[bucket].append(
-                resampled_means.get(bucket, float("nan"))
-            )
+            bootstrap_means[bucket].append(resampled_means.get(bucket, float("nan")))
 
     return bootstrap_means
 ```
@@ -790,16 +799,14 @@ def _run_kruskal_wallis(
         row_count=ordered.height, quantiles=quantiles
     )
     bucket_labels = _compact_bucket_labels(bucket_labels)
-    ordered = ordered.with_columns(
-        pl.Series(BUCKET_ASSIGNMENT_COLUMN, bucket_labels)
-    )
+    ordered = ordered.with_columns(pl.Series(BUCKET_ASSIGNMENT_COLUMN, bucket_labels))
 
     # Collect target values per bucket for the Kruskal-Wallis test.
     groups = []
     for bucket in sorted(set(bucket_labels)):
-        bucket_targets = ordered.filter(
-            pl.col(BUCKET_ASSIGNMENT_COLUMN) == bucket
-        )[target_name].to_numpy()
+        bucket_targets = ordered.filter(pl.col(BUCKET_ASSIGNMENT_COLUMN) == bucket)[
+            target_name
+        ].to_numpy()
         groups.append(bucket_targets)
 
     # Kruskal-Wallis requires at least 2 groups with data.
@@ -1061,8 +1068,7 @@ def classify_volatility_regime(
         pl.when(pl.col(TRAILING_MEDIAN_COLUMN).is_null())
         .then(pl.lit(None, dtype=pl.String))
         .when(
-            pl.col(realized_variance_column).shift(1)
-            >= pl.col(TRAILING_MEDIAN_COLUMN)
+            pl.col(realized_variance_column).shift(1) >= pl.col(TRAILING_MEDIAN_COLUMN)
         )
         .then(pl.lit(HIGH_VOLATILITY_LABEL))
         .otherwise(pl.lit(LOW_VOLATILITY_LABEL))
@@ -1128,9 +1134,7 @@ def build_regime_quantile_summary(
             target_name=target_name,
             quantiles=quantiles,
         )
-        summary = summary.with_columns(
-            pl.lit(regime_label).alias(REGIME_COLUMN)
-        )
+        summary = summary.with_columns(pl.lit(regime_label).alias(REGIME_COLUMN))
         regime_summaries.append(summary)
 
     if not regime_summaries:
@@ -1485,9 +1489,7 @@ def test_subperiod_stability_splits_at_midpoint() -> None:
 
     frame = pl.DataFrame(
         {
-            "trade_date": [
-                date(2024, 1, i + 1) for i in range(20)
-            ],
+            "trade_date": [date(2024, 1, i + 1) for i in range(20)],
             "factor_value": [float(i) for i in range(20)],
             "target_value": [float(i * 2) for i in range(20)],
         }
@@ -1633,29 +1635,36 @@ def build_subperiod_stability(
     second_half = sorted_frame.tail(sorted_frame.height - midpoint)
 
     rows = []
-    for label, subframe in [(FIRST_HALF_LABEL, first_half), (SECOND_HALF_LABEL, second_half)]:
+    for label, subframe in [
+        (FIRST_HALF_LABEL, first_half),
+        (SECOND_HALF_LABEL, second_half),
+    ]:
         clean = subframe.drop_nulls([factor_name, target_name]).filter(
             pl.col(factor_name).is_finite(),
             pl.col(target_name).is_finite(),
         )
         if clean.height < 3:
-            rows.append({
-                SUBPERIOD_COLUMN: label,
-                SPEARMAN_RHO_COLUMN: float("nan"),
-                P_VALUE_COLUMN: float("nan"),
-                OBSERVATION_COUNT_COLUMN: clean.height,
-            })
+            rows.append(
+                {
+                    SUBPERIOD_COLUMN: label,
+                    SPEARMAN_RHO_COLUMN: float("nan"),
+                    P_VALUE_COLUMN: float("nan"),
+                    OBSERVATION_COUNT_COLUMN: clean.height,
+                }
+            )
         else:
             result = stats.spearmanr(
                 clean[factor_name].to_numpy(),
                 clean[target_name].to_numpy(),
             )
-            rows.append({
-                SUBPERIOD_COLUMN: label,
-                SPEARMAN_RHO_COLUMN: float(result.statistic),
-                P_VALUE_COLUMN: float(result.pvalue),
-                OBSERVATION_COUNT_COLUMN: clean.height,
-            })
+            rows.append(
+                {
+                    SUBPERIOD_COLUMN: label,
+                    SPEARMAN_RHO_COLUMN: float(result.statistic),
+                    P_VALUE_COLUMN: float(result.pvalue),
+                    OBSERVATION_COUNT_COLUMN: clean.height,
+                }
+            )
 
     return pl.DataFrame(rows)
 
@@ -1693,30 +1702,32 @@ def build_alternative_band_sensitivity(
         )
         # Join factors with targets on trade_date.
         merged = factors.join(targets, on=TRADE_DATE_COLUMN, how="inner")
-        clean = merged.drop_nulls(
-            [NEAR_SPOT_GAMMA_SHARE_COLUMN, target_name]
-        ).filter(
+        clean = merged.drop_nulls([NEAR_SPOT_GAMMA_SHARE_COLUMN, target_name]).filter(
             pl.col(NEAR_SPOT_GAMMA_SHARE_COLUMN).is_finite(),
             pl.col(target_name).is_finite(),
         )
         if clean.height < 3:
-            rows.append({
-                BAND_WIDTH_COLUMN: band_width,
-                SPEARMAN_RHO_COLUMN: float("nan"),
-                P_VALUE_COLUMN: float("nan"),
-                OBSERVATION_COUNT_COLUMN: clean.height,
-            })
+            rows.append(
+                {
+                    BAND_WIDTH_COLUMN: band_width,
+                    SPEARMAN_RHO_COLUMN: float("nan"),
+                    P_VALUE_COLUMN: float("nan"),
+                    OBSERVATION_COUNT_COLUMN: clean.height,
+                }
+            )
         else:
             result = stats.spearmanr(
                 clean[NEAR_SPOT_GAMMA_SHARE_COLUMN].to_numpy(),
                 clean[target_name].to_numpy(),
             )
-            rows.append({
-                BAND_WIDTH_COLUMN: band_width,
-                SPEARMAN_RHO_COLUMN: float(result.statistic),
-                P_VALUE_COLUMN: float(result.pvalue),
-                OBSERVATION_COUNT_COLUMN: clean.height,
-            })
+            rows.append(
+                {
+                    BAND_WIDTH_COLUMN: band_width,
+                    SPEARMAN_RHO_COLUMN: float(result.statistic),
+                    P_VALUE_COLUMN: float(result.pvalue),
+                    OBSERVATION_COUNT_COLUMN: clean.height,
+                }
+            )
 
     return pl.DataFrame(rows)
 
@@ -1756,23 +1767,27 @@ def build_leave_one_month_out_sensitivity(
             pl.col(target_name).is_finite(),
         )
         if clean.height < 3:
-            rows.append({
-                DROPPED_MONTH_COLUMN: month_label,
-                SPEARMAN_RHO_COLUMN: float("nan"),
-                P_VALUE_COLUMN: float("nan"),
-                OBSERVATION_COUNT_COLUMN: clean.height,
-            })
+            rows.append(
+                {
+                    DROPPED_MONTH_COLUMN: month_label,
+                    SPEARMAN_RHO_COLUMN: float("nan"),
+                    P_VALUE_COLUMN: float("nan"),
+                    OBSERVATION_COUNT_COLUMN: clean.height,
+                }
+            )
         else:
             result = stats.spearmanr(
                 clean[factor_name].to_numpy(),
                 clean[target_name].to_numpy(),
             )
-            rows.append({
-                DROPPED_MONTH_COLUMN: month_label,
-                SPEARMAN_RHO_COLUMN: float(result.statistic),
-                P_VALUE_COLUMN: float(result.pvalue),
-                OBSERVATION_COUNT_COLUMN: clean.height,
-            })
+            rows.append(
+                {
+                    DROPPED_MONTH_COLUMN: month_label,
+                    SPEARMAN_RHO_COLUMN: float(result.statistic),
+                    P_VALUE_COLUMN: float(result.pvalue),
+                    OBSERVATION_COUNT_COLUMN: clean.height,
+                }
+            )
 
     return pl.DataFrame(rows)
 ```
@@ -2077,13 +2092,9 @@ def build_expanding_window_diagnostics(
             .abs()
             .alias(ABSOLUTE_ERROR_COLUMN)
         )
-        errors = errors.with_columns(
-            pl.lit(model_name).alias(MODEL_NAME_COLUMN)
-        )
+        errors = errors.with_columns(pl.lit(model_name).alias(MODEL_NAME_COLUMN))
         diagnostics_rows.append(
-            errors.select(
-                TRADE_DATE_COLUMN, MODEL_NAME_COLUMN, ABSOLUTE_ERROR_COLUMN
-            )
+            errors.select(TRADE_DATE_COLUMN, MODEL_NAME_COLUMN, ABSOLUTE_ERROR_COLUMN)
         )
 
     if not diagnostics_rows:
@@ -2345,9 +2356,9 @@ def build_expanding_window_chart(
     }
 
     for model_name in diagnostics_frame["model_name"].unique().sort().to_list():
-        model_data = diagnostics_frame.filter(
-            pl.col("model_name") == model_name
-        ).sort("trade_date")
+        model_data = diagnostics_frame.filter(pl.col("model_name") == model_name).sort(
+            "trade_date"
+        )
         figure.add_scatter(
             x=model_data["trade_date"].to_list(),
             y=model_data["absolute_error"].to_list(),
@@ -2400,21 +2411,21 @@ git commit -m "feat: add CI error bars to quantile chart and expanding-window di
 Add these parameters to both functions (after the existing `predictive_table` parameter):
 
 ```python
-    statistical_tests_title: str | None = None,
-    statistical_tests_table: pl.DataFrame | None = None,
-    regime_title: str | None = None,
-    regime_description: str | None = None,
-    regime_table: pl.DataFrame | None = None,
-    multi_factor_title: str | None = None,
-    factor_target_table: pl.DataFrame | None = None,
-    factor_factor_table: pl.DataFrame | None = None,
-    subperiod_title: str | None = None,
-    subperiod_table: pl.DataFrame | None = None,
-    band_sensitivity_title: str | None = None,
-    band_sensitivity_table: pl.DataFrame | None = None,
-    loo_month_title: str | None = None,
-    loo_month_table: pl.DataFrame | None = None,
-    expanding_window_chart: go.Figure | None = None,
+statistical_tests_title: str | None = (None,)
+statistical_tests_table: pl.DataFrame | None = (None,)
+regime_title: str | None = (None,)
+regime_description: str | None = (None,)
+regime_table: pl.DataFrame | None = (None,)
+multi_factor_title: str | None = (None,)
+factor_target_table: pl.DataFrame | None = (None,)
+factor_factor_table: pl.DataFrame | None = (None,)
+subperiod_title: str | None = (None,)
+subperiod_table: pl.DataFrame | None = (None,)
+band_sensitivity_title: str | None = (None,)
+band_sensitivity_table: pl.DataFrame | None = (None,)
+loo_month_title: str | None = (None,)
+loo_month_table: pl.DataFrame | None = (None,)
+expanding_window_chart: go.Figure | None = (None,)
 ```
 
 - [ ] **Step 2: Render the new sections in the HTML template**
@@ -2546,7 +2557,9 @@ def report(
     factor: str | None = typer.Option(None, help="Override default factor name."),
     target: str | None = typer.Option(None, help="Override default target name."),
     output_dir: Path | None = typer.Option(None, help="Override output directory."),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging."),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Enable DEBUG logging."
+    ),
 ) -> None:
     """Run the research pipeline and write a self-contained HTML report."""
 
@@ -2572,17 +2585,21 @@ def report(
 Inside `run_pipeline`, add logging at each major step:
 
 ```python
-    logger.info("Loading settings for %s", settings.symbol)
-    # after fetch:
-    logger.info("Fetched %d intraday bars and %d option rows", intraday_bars.height, options_snapshot.height)
-    # after cleaning:
-    logger.info("Cleaned options: %d rows surviving", cleaned_options.height)
-    # after factors:
-    logger.info("Built gamma factors for %d trading days", gamma_factors.height)
-    # after research dataset:
-    logger.info("Research dataset: %d aligned observations", research_dataset.height)
-    # after report:
-    logger.info("Report written to %s", report_path)
+logger.info("Loading settings for %s", settings.symbol)
+# after fetch:
+logger.info(
+    "Fetched %d intraday bars and %d option rows",
+    intraday_bars.height,
+    options_snapshot.height,
+)
+# after cleaning:
+logger.info("Cleaned options: %d rows surviving", cleaned_options.height)
+# after factors:
+logger.info("Built gamma factors for %d trading days", gamma_factors.height)
+# after research dataset:
+logger.info("Research dataset: %d aligned observations", research_dataset.height)
+# after report:
+logger.info("Report written to %s", report_path)
 ```
 
 - [ ] **Step 3: Integrate all new research modules into run_pipeline**
@@ -2593,7 +2610,9 @@ Add imports at the top:
 
 ```python
 from gamma_exposure_engine.research.bootstrap import build_quantile_summary_with_ci
-from gamma_exposure_engine.research.statistical_tests import build_statistical_test_summary
+from gamma_exposure_engine.research.statistical_tests import (
+    build_statistical_test_summary,
+)
 from gamma_exposure_engine.research.regime import build_regime_quantile_summary
 from gamma_exposure_engine.research.multi_factor import (
     build_factor_target_correlations,
@@ -2615,87 +2634,86 @@ from gamma_exposure_engine.reporting.charts import build_expanding_window_chart
 In the pipeline body, after the existing quantile summary, add:
 
 ```python
-    # Bootstrap CIs on the quantile summary.
-    quantile_summary = build_quantile_summary_with_ci(
-        frame=research_dataset,
-        factor_name=factor_name,
-        target_name=target_name,
-        quantiles=settings.research.quantile_count,
-        bootstrap_iterations=settings.research.bootstrap_iterations,
-        confidence_level=settings.research.bootstrap_confidence_level,
-    )
-    logger.info("Bootstrap CIs computed with %d iterations", settings.research.bootstrap_iterations)
+# Bootstrap CIs on the quantile summary.
+quantile_summary = build_quantile_summary_with_ci(
+    frame=research_dataset,
+    factor_name=factor_name,
+    target_name=target_name,
+    quantiles=settings.research.quantile_count,
+    bootstrap_iterations=settings.research.bootstrap_iterations,
+    confidence_level=settings.research.bootstrap_confidence_level,
+)
+logger.info(
+    "Bootstrap CIs computed with %d iterations", settings.research.bootstrap_iterations
+)
 
-    # Statistical tests.
-    statistical_tests = build_statistical_test_summary(
-        frame=research_dataset,
-        factor_name=factor_name,
-        target_name=target_name,
-        quantiles=settings.research.quantile_count,
-    )
+# Statistical tests.
+statistical_tests = build_statistical_test_summary(
+    frame=research_dataset,
+    factor_name=factor_name,
+    target_name=target_name,
+    quantiles=settings.research.quantile_count,
+)
 
-    # Regime-conditional analysis.
-    regime_summary = build_regime_quantile_summary(
-        frame=research_dataset,
-        factor_name=factor_name,
-        target_name=target_name,
-        quantiles=settings.research.quantile_count,
-        lookback_window=settings.research.regime_lookback_window,
-    )
+# Regime-conditional analysis.
+regime_summary = build_regime_quantile_summary(
+    frame=research_dataset,
+    factor_name=factor_name,
+    target_name=target_name,
+    quantiles=settings.research.quantile_count,
+    lookback_window=settings.research.regime_lookback_window,
+)
 
-    # Multi-factor correlations.
-    factor_columns = [
-        c for c in research_dataset.columns
-        if c not in ("trade_date", "response_trade_date")
-        and not c.startswith("next_day_")
-    ]
-    target_columns = [
-        c for c in research_dataset.columns
-        if c.startswith("next_day_")
-    ]
-    factor_target_corr = build_factor_target_correlations(
-        frame=research_dataset,
-        factor_names=factor_columns,
-        target_names=target_columns,
-    )
-    factor_factor_corr = build_factor_factor_correlations(
-        frame=research_dataset,
-        factor_names=factor_columns,
-    )
+# Multi-factor correlations.
+factor_columns = [
+    c
+    for c in research_dataset.columns
+    if c not in ("trade_date", "response_trade_date") and not c.startswith("next_day_")
+]
+target_columns = [c for c in research_dataset.columns if c.startswith("next_day_")]
+factor_target_corr = build_factor_target_correlations(
+    frame=research_dataset,
+    factor_names=factor_columns,
+    target_names=target_columns,
+)
+factor_factor_corr = build_factor_factor_correlations(
+    frame=research_dataset,
+    factor_names=factor_columns,
+)
 
-    # Extended robustness.
-    subperiod = build_subperiod_stability(
-        frame=research_dataset,
-        factor_name=factor_name,
-        target_name=target_name,
-    )
+# Extended robustness.
+subperiod = build_subperiod_stability(
+    frame=research_dataset,
+    factor_name=factor_name,
+    target_name=target_name,
+)
 
-    # Build the target frame for alternative band sensitivity.
-    target_frame = research_dataset.select("trade_date", target_name)
-    band_sensitivity = build_alternative_band_sensitivity(
-        cleaned_options=cleaned_options,
-        targets=target_frame,
-        target_name=target_name,
-        band_widths=list(settings.research.robustness_band_widths),
-    )
+# Build the target frame for alternative band sensitivity.
+target_frame = research_dataset.select("trade_date", target_name)
+band_sensitivity = build_alternative_band_sensitivity(
+    cleaned_options=cleaned_options,
+    targets=target_frame,
+    target_name=target_name,
+    band_widths=list(settings.research.robustness_band_widths),
+)
 
-    loo_month = build_leave_one_month_out_sensitivity(
-        frame=research_dataset,
-        factor_name=factor_name,
-        target_name=target_name,
-    )
+loo_month = build_leave_one_month_out_sensitivity(
+    frame=research_dataset,
+    factor_name=factor_name,
+    target_name=target_name,
+)
 
-    # Predictive upgrade.
-    expanding_diagnostics = build_expanding_window_diagnostics(
-        frame=research_dataset,
-        feature_name=factor_name,
-        target_name=target_name,
-        min_train_size=settings.research.predictive_min_train_size,
-        alpha_candidates=list(settings.research.ridge_alpha_candidates),
-    )
-    expanding_chart = None
-    if expanding_diagnostics.height > 0:
-        expanding_chart = build_expanding_window_chart(expanding_diagnostics)
+# Predictive upgrade.
+expanding_diagnostics = build_expanding_window_diagnostics(
+    frame=research_dataset,
+    feature_name=factor_name,
+    target_name=target_name,
+    min_train_size=settings.research.predictive_min_train_size,
+    alpha_candidates=list(settings.research.ridge_alpha_candidates),
+)
+expanding_chart = None
+if expanding_diagnostics.height > 0:
+    expanding_chart = build_expanding_window_chart(expanding_diagnostics)
 ```
 
 Then pass all new outputs to `write_html_report` via the new optional parameters.

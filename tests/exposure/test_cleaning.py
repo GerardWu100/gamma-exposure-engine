@@ -10,7 +10,6 @@ from __future__ import annotations
 from datetime import date
 
 import polars as pl
-
 from gamma_exposure_engine.exposure.cleaning import (
     CONTRACT_MULTIPLIER,
     clean_options_snapshot,

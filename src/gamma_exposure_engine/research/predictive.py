@@ -7,15 +7,12 @@ they remain safe for time-series evaluation.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from math import sqrt
-from typing import Callable
-from typing import Sequence
 
 import numpy as np
 import polars as pl
-from sklearn.linear_model import LinearRegression
-from sklearn.linear_model import Ridge
-from sklearn.linear_model import RidgeCV
+from sklearn.linear_model import LinearRegression, Ridge, RidgeCV
 
 TRADE_DATE_COLUMN: str = "trade_date"
 ACTUAL_COLUMN: str = "actual"

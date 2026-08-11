@@ -10,7 +10,6 @@ from datetime import date
 
 import polars as pl
 import pytest
-
 from gamma_exposure_engine.research.predictive import (
     add_naive_lagged_target_baseline,
     add_naive_volatility_baseline,

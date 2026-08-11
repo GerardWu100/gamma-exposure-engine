@@ -12,8 +12,10 @@ from pathlib import Path
 
 import polars as pl
 
-from gamma_exposure_engine.data.raw_store import load_raw_intraday_bars
-from gamma_exposure_engine.data.raw_store import load_raw_options_snapshot
+from gamma_exposure_engine.data.raw_store import (
+    load_raw_intraday_bars,
+    load_raw_options_snapshot,
+)
 from gamma_exposure_engine.exposure.aggregation import (
     build_daily_gamma_factors,
     build_strike_gamma_map,
@@ -22,8 +24,10 @@ from gamma_exposure_engine.exposure.cleaning import (
     clean_options_snapshot,
     summarize_cleaning_diagnostics,
 )
-from gamma_exposure_engine.intraday.metrics import attach_pinning_distance
-from gamma_exposure_engine.intraday.metrics import build_daily_intraday_metrics
+from gamma_exposure_engine.intraday.metrics import (
+    attach_pinning_distance,
+    build_daily_intraday_metrics,
+)
 from gamma_exposure_engine.research.bootstrap import build_quantile_summary_with_ci
 from gamma_exposure_engine.research.dataset import build_research_dataset
 from gamma_exposure_engine.research.descriptive import (

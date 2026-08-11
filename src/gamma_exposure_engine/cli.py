@@ -8,7 +8,9 @@ from pathlib import Path
 
 import typer
 
-from gamma_exposure_engine.data.raw_cache_builder import refresh_raw_cache_from_clickhouse
+from gamma_exposure_engine.data.raw_cache_builder import (
+    refresh_raw_cache_from_clickhouse,
+)
 from gamma_exposure_engine.pipeline.offline_pipeline import run_offline_analysis
 from gamma_exposure_engine.settings import load_settings
 

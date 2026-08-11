@@ -75,10 +75,7 @@ def build_daily_intraday_metrics(
     # any join work so the contract does not depend on join ordering.
     daily_metrics = daily_metrics.with_columns(
         pl.col(REALIZED_VARIANCE_COLUMN).sqrt().alias(REALIZED_VOLATILITY_COLUMN),
-        (
-            (pl.col(CLOSE_PRICE_COLUMN) / pl.col(CLOSE_PRICE_COLUMN).shift(1))
-            - 1.0
-        )
+        ((pl.col(CLOSE_PRICE_COLUMN) / pl.col(CLOSE_PRICE_COLUMN).shift(1)) - 1.0)
         .abs()
         .alias(CLOSE_TO_CLOSE_ABS_RETURN_COLUMN),
     )
@@ -122,19 +119,22 @@ def attach_pinning_distance(
     candidate_calendar = candidate_calendar.with_columns(
         pl.col(TRADE_DATE_COLUMN).shift(-1).alias("_response_trade_date")
     )
-    aligned_candidates = candidate_strikes.select(
-        pl.col(TRADE_DATE_COLUMN),
-        pl.col(STRIKE_PRICE_COLUMN),
-    ).join(
-        candidate_calendar.rename(
-            {TRADE_DATE_COLUMN: "_candidate_trade_date"}
-        ),
-        left_on=TRADE_DATE_COLUMN,
-        right_on="_candidate_trade_date",
-        how="inner",
-    ).drop_nulls(["_response_trade_date"]).select(
-        pl.col("_response_trade_date").alias(TRADE_DATE_COLUMN),
-        pl.col(STRIKE_PRICE_COLUMN),
+    aligned_candidates = (
+        candidate_strikes.select(
+            pl.col(TRADE_DATE_COLUMN),
+            pl.col(STRIKE_PRICE_COLUMN),
+        )
+        .join(
+            candidate_calendar.rename({TRADE_DATE_COLUMN: "_candidate_trade_date"}),
+            left_on=TRADE_DATE_COLUMN,
+            right_on="_candidate_trade_date",
+            how="inner",
+        )
+        .drop_nulls(["_response_trade_date"])
+        .select(
+            pl.col("_response_trade_date").alias(TRADE_DATE_COLUMN),
+            pl.col(STRIKE_PRICE_COLUMN),
+        )
     )
     close_to_strike = metrics.join(
         aligned_candidates,
@@ -147,8 +147,7 @@ def attach_pinning_distance(
         (
             (pl.col(CLOSE_PRICE_COLUMN) - pl.col(STRIKE_PRICE_COLUMN)).abs()
             / pl.col(CLOSE_PRICE_COLUMN)
-        )
-        .alias(PINNING_DISTANCE_COLUMN)
+        ).alias(PINNING_DISTANCE_COLUMN)
     )
     nearest_distance = close_to_strike.group_by(TRADE_DATE_COLUMN).agg(
         pl.col(PINNING_DISTANCE_COLUMN).min().alias(PINNING_DISTANCE_COLUMN)
@@ -190,9 +189,7 @@ def _build_daily_bar_metrics(minute_bars: pl.DataFrame) -> pl.DataFrame:
     )
     daily_metrics = daily_bars.group_by(TRADE_DATE_COLUMN).agg(
         pl.col(LOG_RETURN_COLUMN).pow(2).sum().alias(REALIZED_VARIANCE_COLUMN),
-        (
-            (pl.col(CLOSE_COLUMN).last() / pl.col(OPEN_COLUMN).first()) - 1.0
-        )
+        ((pl.col(CLOSE_COLUMN).last() / pl.col(OPEN_COLUMN).first()) - 1.0)
         .abs()
         .alias(OPEN_TO_CLOSE_ABS_RETURN_COLUMN),
         pl.col(CLOSE_COLUMN).last().alias(CLOSE_PRICE_COLUMN),
@@ -232,9 +229,7 @@ def _build_abnormal_volume_scores(
         pl.col(BASELINE_MINUTE_VOLUME_COLUMN).fill_null(ZERO_FLOAT)
     )
     expected_daily_volume = minute_volume.group_by(TRADE_DATE_COLUMN).agg(
-        pl.col(BASELINE_MINUTE_VOLUME_COLUMN).sum().alias(
-            EXPECTED_TOTAL_VOLUME_COLUMN
-        )
+        pl.col(BASELINE_MINUTE_VOLUME_COLUMN).sum().alias(EXPECTED_TOTAL_VOLUME_COLUMN)
     )
     daily_total_volume = minute_volume.group_by(TRADE_DATE_COLUMN).agg(
         pl.col(MINUTE_VOLUME_COLUMN).sum().alias(TOTAL_VOLUME_COLUMN)

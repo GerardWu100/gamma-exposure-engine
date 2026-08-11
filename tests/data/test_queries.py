@@ -12,7 +12,6 @@ from datetime import date, datetime
 
 import polars as pl
 import pytest
-
 from gamma_exposure_engine.data.intraday_queries import (
     build_intraday_query,
     fetch_intraday_bars_from_clickhouse,

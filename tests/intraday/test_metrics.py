@@ -12,7 +12,6 @@ from math import isnan, log, sqrt
 
 import polars as pl
 import pytest
-
 from gamma_exposure_engine.intraday.metrics import (
     _build_minute_bars,
     attach_pinning_distance,
@@ -96,9 +95,7 @@ def test_build_daily_intraday_metrics_sorts_daily_series_before_close_shift() ->
     assert metrics["close_price"].to_list() == [100.5, 100.0]
     close_to_close_abs_return = metrics["close_to_close_abs_return"].to_list()
     assert isnan(close_to_close_abs_return[0])
-    assert close_to_close_abs_return[1] == abs(
-        (100.0 / 100.5) - 1.0
-    )
+    assert close_to_close_abs_return[1] == abs((100.0 / 100.5) - 1.0)
 
 
 def test_build_daily_intraday_metrics_uses_trailing_minute_baseline_only() -> None:
@@ -145,24 +142,36 @@ def test_build_daily_intraday_metrics_uses_trailing_minute_baseline_only() -> No
     metrics = build_daily_intraday_metrics(frame, abnormal_volume_window=2)
 
     # Day 1 has no prior history, so the contract is explicitly numeric.
-    assert metrics.filter(pl.col("trade_date") == date(2024, 1, 2))[
-        "abnormal_volume_score"
-    ].item() == 0.0
+    assert (
+        metrics.filter(pl.col("trade_date") == date(2024, 1, 2))[
+            "abnormal_volume_score"
+        ].item()
+        == 0.0
+    )
 
     # Day 2 only sees day 1 in the trailing baseline.
-    assert metrics.filter(pl.col("trade_date") == date(2024, 1, 3))[
-        "abnormal_volume_score"
-    ].item() == 2.0
+    assert (
+        metrics.filter(pl.col("trade_date") == date(2024, 1, 3))[
+            "abnormal_volume_score"
+        ].item()
+        == 2.0
+    )
 
     # Day 3 sees day 1 and day 2, not itself.
-    assert metrics.filter(pl.col("trade_date") == date(2024, 1, 4))[
-        "abnormal_volume_score"
-    ].item() == 8.0 / 3.0
+    assert (
+        metrics.filter(pl.col("trade_date") == date(2024, 1, 4))[
+            "abnormal_volume_score"
+        ].item()
+        == 8.0 / 3.0
+    )
 
     # Day 4 sees only the most recent two prior days because the window is 2.
-    assert metrics.filter(pl.col("trade_date") == date(2024, 1, 5))[
-        "abnormal_volume_score"
-    ].item() == 22.0 / 9.0
+    assert (
+        metrics.filter(pl.col("trade_date") == date(2024, 1, 5))[
+            "abnormal_volume_score"
+        ].item()
+        == 22.0 / 9.0
+    )
 
 
 def test_attach_pinning_distance_uses_prior_day_nearest_candidate_strike() -> None:

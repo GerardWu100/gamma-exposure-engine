@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 import polars as pl
-
 from gamma_exposure_engine.research.regime import (
     HIGH_VOLATILITY_LABEL,
     LOW_VOLATILITY_LABEL,

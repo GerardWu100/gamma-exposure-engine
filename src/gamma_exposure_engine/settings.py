@@ -8,8 +8,8 @@ consume the typed settings defined here so runtime defaults live in
 
 from dataclasses import dataclass
 from pathlib import Path
-import tomllib
 
+import tomllib
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = PACKAGE_ROOT.parent.parent

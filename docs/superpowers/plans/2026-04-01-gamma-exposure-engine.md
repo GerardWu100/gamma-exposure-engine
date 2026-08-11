@@ -302,14 +302,18 @@ from gamma_exposure_engine.data.intraday_queries import build_intraday_query
 
 
 def test_build_options_snapshot_query_filters_symbol_and_dates() -> None:
-    query = build_options_snapshot_query(symbol="SPY", start_date="2024-01-01", end_date="2024-01-31")
+    query = build_options_snapshot_query(
+        symbol="SPY", start_date="2024-01-01", end_date="2024-01-31"
+    )
     assert "FROM firstrate.options" in query
     assert "symbol = {symbol:String}" in query
     assert "trade_date BETWEEN {start_date:Date} AND {end_date:Date}" in query
 
 
 def test_build_intraday_query_filters_symbol_and_dates() -> None:
-    query = build_intraday_query(symbol="SPY", start_date="2024-01-01", end_date="2024-01-31")
+    query = build_intraday_query(
+        symbol="SPY", start_date="2024-01-01", end_date="2024-01-31"
+    )
     assert "FROM firstrate.etfs" in query
     assert "symbol = {symbol:String}" in query
     assert "toDate(ts) BETWEEN {start_date:Date} AND {end_date:Date}" in query
@@ -392,8 +396,13 @@ def fetch_options_snapshot(symbol: str, start_date: str, end_date: str) -> pl.Da
     """Return options rows as a Polars DataFrame."""
 
     client = create_clickhouse_client()
-    query = build_options_snapshot_query(symbol=symbol, start_date=start_date, end_date=end_date)
-    result = client.query(query, parameters={"symbol": symbol, "start_date": start_date, "end_date": end_date})
+    query = build_options_snapshot_query(
+        symbol=symbol, start_date=start_date, end_date=end_date
+    )
+    result = client.query(
+        query,
+        parameters={"symbol": symbol, "start_date": start_date, "end_date": end_date},
+    )
     return pl.DataFrame(result.result_rows, schema=result.column_names, orient="row")
 ```
 
@@ -430,8 +439,13 @@ def fetch_intraday_bars(symbol: str, start_date: str, end_date: str) -> pl.DataF
     """Return intraday bars as a Polars DataFrame."""
 
     client = create_clickhouse_client()
-    query = build_intraday_query(symbol=symbol, start_date=start_date, end_date=end_date)
-    result = client.query(query, parameters={"symbol": symbol, "start_date": start_date, "end_date": end_date})
+    query = build_intraday_query(
+        symbol=symbol, start_date=start_date, end_date=end_date
+    )
+    result = client.query(
+        query,
+        parameters={"symbol": symbol, "start_date": start_date, "end_date": end_date},
+    )
     return pl.DataFrame(result.result_rows, schema=result.column_names, orient="row")
 ```
 
@@ -444,8 +458,18 @@ from gamma_exposure_engine.data.options_queries import fetch_options_snapshot
 
 
 def test_fetch_options_snapshot_returns_required_columns() -> None:
-    frame = fetch_options_snapshot(symbol="SPY", start_date="2024-01-02", end_date="2024-01-03")
-    expected_columns = {"symbol", "trade_date", "strike_price", "expiry_date", "option_type", "open_interest", "gamma"}
+    frame = fetch_options_snapshot(
+        symbol="SPY", start_date="2024-01-02", end_date="2024-01-03"
+    )
+    expected_columns = {
+        "symbol",
+        "trade_date",
+        "strike_price",
+        "expiry_date",
+        "option_type",
+        "open_interest",
+        "gamma",
+    }
     assert expected_columns.issubset(set(frame.columns))
     assert frame.height > 0
 ```
@@ -536,7 +560,9 @@ def clean_options_snapshot(frame: pl.DataFrame) -> pl.DataFrame:
     )
     cleaned = cleaned.filter(pl.col("valid_bid_ask"))
     cleaned = cleaned.with_columns(
-        ((pl.col("expiry_date") - pl.col("trade_date")).dt.total_days()).alias("days_to_expiry"),
+        ((pl.col("expiry_date") - pl.col("trade_date")).dt.total_days()).alias(
+            "days_to_expiry"
+        ),
         ((pl.col("strike_price") / pl.col("spot_close")) - 1.0).alias("moneyness"),
         (
             pl.col("open_interest")
@@ -653,23 +679,36 @@ def build_expiry_gamma_map(frame: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def build_daily_gamma_factors(frame: pl.DataFrame, near_spot_band: float) -> pl.DataFrame:
+def build_daily_gamma_factors(
+    frame: pl.DataFrame, near_spot_band: float
+) -> pl.DataFrame:
     """Build interpretable daily gamma factors."""
 
     enriched = frame.with_columns(
-        (((pl.col("strike_price") / pl.col("spot_close")) - 1.0).abs() <= near_spot_band).alias("is_near_spot")
+        (
+            ((pl.col("strike_price") / pl.col("spot_close")) - 1.0).abs()
+            <= near_spot_band
+        ).alias("is_near_spot")
     )
-    total_abs = enriched.group_by("trade_date").agg(pl.col("gamma_exposure").abs().sum().alias("absolute_gamma_exposure"))
-    near_spot = enriched.filter(pl.col("is_near_spot")).group_by("trade_date").agg(
-        pl.col("gamma_exposure").abs().sum().alias("near_spot_abs_gamma")
+    total_abs = enriched.group_by("trade_date").agg(
+        pl.col("gamma_exposure").abs().sum().alias("absolute_gamma_exposure")
+    )
+    near_spot = (
+        enriched.filter(pl.col("is_near_spot"))
+        .group_by("trade_date")
+        .agg(pl.col("gamma_exposure").abs().sum().alias("near_spot_abs_gamma"))
     )
     base = enriched.group_by("trade_date").agg(
         pl.col("gamma_exposure").sum().alias("net_gamma_exposure"),
         pl.col("gamma_exposure").abs().sum().alias("absolute_gamma_exposure"),
     )
-    joined = base.join(near_spot, on="trade_date", how="left").with_columns(pl.col("near_spot_abs_gamma").fill_null(0.0))
+    joined = base.join(near_spot, on="trade_date", how="left").with_columns(
+        pl.col("near_spot_abs_gamma").fill_null(0.0)
+    )
     return joined.with_columns(
-        (pl.col("near_spot_abs_gamma") / pl.col("absolute_gamma_exposure")).alias("near_spot_gamma_share")
+        (pl.col("near_spot_abs_gamma") / pl.col("absolute_gamma_exposure")).alias(
+            "near_spot_gamma_share"
+        )
     )
 ```
 
@@ -684,7 +723,11 @@ from gamma_exposure_engine.exposure.aggregation import build_strike_gamma_map
 def test_build_strike_gamma_map_aggregates_signed_and_absolute_exposure() -> None:
     frame = pl.DataFrame(
         {
-            "trade_date": [pl.date(2024, 1, 2), pl.date(2024, 1, 2), pl.date(2024, 1, 2)],
+            "trade_date": [
+                pl.date(2024, 1, 2),
+                pl.date(2024, 1, 2),
+                pl.date(2024, 1, 2),
+            ],
             "strike_price": [470.0, 470.0, 475.0],
             "gamma_exposure": [100.0, -20.0, -50.0],
             "spot_close": [472.0, 472.0, 472.0],
@@ -762,7 +805,9 @@ Expected: FAIL because the intraday module does not exist
 import polars as pl
 
 
-def build_daily_intraday_metrics(frame: pl.DataFrame, abnormal_volume_window: int) -> pl.DataFrame:
+def build_daily_intraday_metrics(
+    frame: pl.DataFrame, abnormal_volume_window: int
+) -> pl.DataFrame:
     """Aggregate intraday bars into daily response metrics."""
 
     enriched = frame.sort("ts").with_columns(
@@ -772,14 +817,23 @@ def build_daily_intraday_metrics(frame: pl.DataFrame, abnormal_volume_window: in
     )
     realized = enriched.group_by("trade_date").agg(
         (pl.col("log_return").fill_null(0.0).pow(2).sum()).alias("realized_variance"),
-        (pl.col("close").last() / pl.col("close").first() - 1.0).abs().alias("open_to_close_abs_return"),
+        (pl.col("close").last() / pl.col("close").first() - 1.0)
+        .abs()
+        .alias("open_to_close_abs_return"),
         pl.col("close").last().alias("close_price"),
         pl.col("volume").sum().alias("total_volume"),
     )
-    baseline = enriched.group_by(["trade_date", "minute_of_day"]).agg(pl.col("volume").sum().alias("minute_volume"))
-    daily_baseline = baseline.group_by("trade_date").agg(pl.col("minute_volume").mean().alias("baseline_minute_volume"))
+    baseline = enriched.group_by(["trade_date", "minute_of_day"]).agg(
+        pl.col("volume").sum().alias("minute_volume")
+    )
+    daily_baseline = baseline.group_by("trade_date").agg(
+        pl.col("minute_volume").mean().alias("baseline_minute_volume")
+    )
     return realized.join(daily_baseline, on="trade_date", how="left").with_columns(
-        (pl.col("total_volume") / (pl.col("baseline_minute_volume") * abnormal_volume_window)).alias("abnormal_volume_score")
+        (
+            pl.col("total_volume")
+            / (pl.col("baseline_minute_volume") * abnormal_volume_window)
+        ).alias("abnormal_volume_score")
     )
 ```
 
@@ -792,7 +846,9 @@ from gamma_exposure_engine.intraday.metrics import attach_pinning_distance
 
 
 def test_attach_pinning_distance_uses_nearest_large_gamma_strike() -> None:
-    metrics = pl.DataFrame({"trade_date": [pl.date(2024, 1, 3)], "close_price": [471.5]})
+    metrics = pl.DataFrame(
+        {"trade_date": [pl.date(2024, 1, 3)], "close_price": [471.5]}
+    )
     candidate_strikes = pl.DataFrame(
         {
             "trade_date": [pl.date(2024, 1, 3), pl.date(2024, 1, 3)],
@@ -807,12 +863,18 @@ def test_attach_pinning_distance_uses_nearest_large_gamma_strike() -> None:
 Add to `gamma_exposure_engine/intraday/metrics.py`:
 
 ```python
-def attach_pinning_distance(metrics: pl.DataFrame, candidate_strikes: pl.DataFrame) -> pl.DataFrame:
+def attach_pinning_distance(
+    metrics: pl.DataFrame, candidate_strikes: pl.DataFrame
+) -> pl.DataFrame:
     """Attach distance from close to the nearest high-gamma candidate strike."""
 
     joined = metrics.join(candidate_strikes, on="trade_date", how="left")
-    joined = joined.with_columns((pl.col("close_price") - pl.col("strike_price")).abs().alias("distance"))
-    nearest = joined.group_by("trade_date").agg(pl.col("distance").min().alias("pinning_distance"))
+    joined = joined.with_columns(
+        (pl.col("close_price") - pl.col("strike_price")).abs().alias("distance")
+    )
+    nearest = joined.group_by("trade_date").agg(
+        pl.col("distance").min().alias("pinning_distance")
+    )
     return metrics.join(nearest, on="trade_date", how="left")
 ```
 
@@ -881,12 +943,23 @@ Expected: FAIL because the dataset module does not exist
 import polars as pl
 
 
-def build_research_dataset(exposures: pl.DataFrame, responses: pl.DataFrame) -> pl.DataFrame:
+def build_research_dataset(
+    exposures: pl.DataFrame, responses: pl.DataFrame
+) -> pl.DataFrame:
     """Join exposure features on day t with response variables on day t plus 1."""
 
-    shifted = responses.rename({"trade_date": "response_date", "realized_variance": "next_day_realized_variance"})
-    shifted = shifted.with_columns(pl.col("response_date").dt.offset_by("-1d").alias("trade_date"))
-    return exposures.join(shifted.drop("response_date"), on="trade_date", how="inner").sort("trade_date")
+    shifted = responses.rename(
+        {
+            "trade_date": "response_date",
+            "realized_variance": "next_day_realized_variance",
+        }
+    )
+    shifted = shifted.with_columns(
+        pl.col("response_date").dt.offset_by("-1d").alias("trade_date")
+    )
+    return exposures.join(
+        shifted.drop("response_date"), on="trade_date", how="inner"
+    ).sort("trade_date")
 ```
 
 - [ ] **Step 3: Add a test that same-day leakage does not occur**
@@ -895,8 +968,12 @@ Append to `tests/research/test_dataset.py`:
 
 ```python
 def test_build_research_dataset_does_not_join_same_day_response() -> None:
-    exposures = pl.DataFrame({"trade_date": [pl.date(2024, 1, 2)], "net_gamma_exposure": [100.0]})
-    responses = pl.DataFrame({"trade_date": [pl.date(2024, 1, 2)], "realized_variance": [0.1]})
+    exposures = pl.DataFrame(
+        {"trade_date": [pl.date(2024, 1, 2)], "net_gamma_exposure": [100.0]}
+    )
+    responses = pl.DataFrame(
+        {"trade_date": [pl.date(2024, 1, 2)], "realized_variance": [0.1]}
+    )
     dataset = build_research_dataset(exposures, responses)
     assert dataset.height == 0
 ```
@@ -942,7 +1019,12 @@ def test_build_quantile_summary_groups_rows_into_quantiles() -> None:
             "next_day_realized_variance": [float(value) / 10.0 for value in range(10)],
         }
     )
-    summary = build_quantile_summary(frame, factor_name="net_gamma_exposure", target_name="next_day_realized_variance", quantiles=5)
+    summary = build_quantile_summary(
+        frame,
+        factor_name="net_gamma_exposure",
+        target_name="next_day_realized_variance",
+        quantiles=5,
+    )
     assert summary.height == 5
 ```
 
@@ -962,7 +1044,12 @@ def test_walk_forward_linear_baseline_returns_out_of_sample_rows() -> None:
             "next_day_realized_variance": [float(value) / 10.0 for value in range(20)],
         }
     )
-    predictions = walk_forward_linear_baseline(frame, feature_names=["net_gamma_exposure"], target_name="next_day_realized_variance", min_train_size=10)
+    predictions = walk_forward_linear_baseline(
+        frame,
+        feature_names=["net_gamma_exposure"],
+        target_name="next_day_realized_variance",
+        min_train_size=10,
+    )
     assert predictions.height == 10
 ```
 
@@ -984,17 +1071,27 @@ Expected: FAIL because the research modules do not exist
 import polars as pl
 
 
-def build_quantile_summary(frame: pl.DataFrame, factor_name: str, target_name: str, quantiles: int) -> pl.DataFrame:
+def build_quantile_summary(
+    frame: pl.DataFrame, factor_name: str, target_name: str, quantiles: int
+) -> pl.DataFrame:
     """Group the target by factor quantile."""
 
     ranked = frame.sort(factor_name).with_row_index("row_number")
     ranked = ranked.with_columns(
-        ((pl.col("row_number") * quantiles) / pl.len()).floor().clip(0, quantiles - 1).cast(pl.Int64).alias("quantile_bucket")
+        ((pl.col("row_number") * quantiles) / pl.len())
+        .floor()
+        .clip(0, quantiles - 1)
+        .cast(pl.Int64)
+        .alias("quantile_bucket")
     )
-    return ranked.group_by("quantile_bucket").agg(
-        pl.col(target_name).mean().alias("target_mean"),
-        pl.len().alias("observation_count"),
-    ).sort("quantile_bucket")
+    return (
+        ranked.group_by("quantile_bucket")
+        .agg(
+            pl.col(target_name).mean().alias("target_mean"),
+            pl.len().alias("observation_count"),
+        )
+        .sort("quantile_bucket")
+    )
 ```
 
 `gamma_exposure_engine/research/predictive.py`
@@ -1037,10 +1134,14 @@ def walk_forward_linear_baseline(
 Append to `gamma_exposure_engine/research/predictive.py`:
 
 ```python
-def add_naive_volatility_baseline(frame: pl.DataFrame, target_name: str) -> pl.DataFrame:
+def add_naive_volatility_baseline(
+    frame: pl.DataFrame, target_name: str
+) -> pl.DataFrame:
     """Attach a one-day lagged naive baseline."""
 
-    return frame.sort("trade_date").with_columns(pl.col(target_name).shift(1).alias("naive_lagged_target"))
+    return frame.sort("trade_date").with_columns(
+        pl.col(target_name).shift(1).alias("naive_lagged_target")
+    )
 ```
 
 Append to `tests/research/test_predictive.py`:
@@ -1056,7 +1157,9 @@ def test_add_naive_volatility_baseline_uses_lagged_target() -> None:
             "next_day_realized_variance": [0.1, 0.2],
         }
     )
-    result = add_naive_volatility_baseline(frame, target_name="next_day_realized_variance")
+    result = add_naive_volatility_baseline(
+        frame, target_name="next_day_realized_variance"
+    )
     assert result["naive_lagged_target"].to_list() == [None, 0.1]
 ```
 
@@ -1095,7 +1198,9 @@ from gamma_exposure_engine.reporting.html_report import write_html_report
 def test_write_html_report_creates_html_file(tmp_path: Path) -> None:
     summary = pl.DataFrame({"quantile_bucket": [0, 1], "target_mean": [0.1, 0.2]})
     output_path = tmp_path / "report.html"
-    write_html_report(output_path=output_path, quantile_summary=summary, title="Gamma Exposure Report")
+    write_html_report(
+        output_path=output_path, quantile_summary=summary, title="Gamma Exposure Report"
+    )
     assert output_path.exists()
     assert "<html" in output_path.read_text().lower()
 ```
@@ -1142,10 +1247,14 @@ import polars as pl
 from gamma_exposure_engine.reporting.charts import make_quantile_bar_chart
 
 
-def write_html_report(output_path: Path, quantile_summary: pl.DataFrame, title: str) -> None:
+def write_html_report(
+    output_path: Path, quantile_summary: pl.DataFrame, title: str
+) -> None:
     """Write a self-contained HTML report with an embedded Plotly figure."""
 
-    chart_html = make_quantile_bar_chart(quantile_summary).to_html(include_plotlyjs="cdn", full_html=False)
+    chart_html = make_quantile_bar_chart(quantile_summary).to_html(
+        include_plotlyjs="cdn", full_html=False
+    )
     html = f"""
     <html>
       <head><title>{title}</title></head>
@@ -1167,7 +1276,9 @@ Append to `tests/reporting/test_html_report.py`:
 def test_write_html_report_includes_title(tmp_path: Path) -> None:
     summary = pl.DataFrame({"quantile_bucket": [0], "target_mean": [0.1]})
     output_path = tmp_path / "report.html"
-    write_html_report(output_path=output_path, quantile_summary=summary, title="Gamma Exposure Report")
+    write_html_report(
+        output_path=output_path, quantile_summary=summary, title="Gamma Exposure Report"
+    )
     assert "Gamma Exposure Report" in output_path.read_text()
 ```
 
@@ -1292,7 +1403,9 @@ from gamma_exposure_engine.cli import run_pipeline
 
 
 def test_run_pipeline_writes_report(tmp_path: Path) -> None:
-    output_path = run_pipeline(start_date="2024-01-02", end_date="2024-01-10", output_dir=tmp_path)
+    output_path = run_pipeline(
+        start_date="2024-01-02", end_date="2024-01-10", output_dir=tmp_path
+    )
     assert output_path.exists()
     assert output_path.suffix == ".html"
 ```
@@ -1325,23 +1438,42 @@ from gamma_exposure_engine.reporting.html_report import write_html_report
 from gamma_exposure_engine.settings import load_settings
 
 
-def run_pipeline(start_date: str, end_date: str, output_dir: Path | None = None) -> Path:
+def run_pipeline(
+    start_date: str, end_date: str, output_dir: Path | None = None
+) -> Path:
     """Run a short end-to-end pipeline and return the report path."""
 
     settings = load_settings()
     destination = output_dir or settings.outputs_dir
     destination.mkdir(exist_ok=True)
-    intraday = fetch_intraday_bars(symbol=settings.symbol, start_date=start_date, end_date=end_date)
-    spot_close = intraday.group_by(intraday["ts"].dt.date().alias("trade_date")).agg(intraday["close"].last().alias("spot_close"))
-    options = fetch_options_snapshot(symbol=settings.symbol, start_date=start_date, end_date=end_date)
+    intraday = fetch_intraday_bars(
+        symbol=settings.symbol, start_date=start_date, end_date=end_date
+    )
+    spot_close = intraday.group_by(intraday["ts"].dt.date().alias("trade_date")).agg(
+        intraday["close"].last().alias("spot_close")
+    )
+    options = fetch_options_snapshot(
+        symbol=settings.symbol, start_date=start_date, end_date=end_date
+    )
     options = options.join(spot_close, on="trade_date", how="inner")
     cleaned = clean_options_snapshot(options)
     factors = build_daily_gamma_factors(cleaned, near_spot_band=settings.near_spot_band)
-    responses = build_daily_intraday_metrics(intraday, abnormal_volume_window=settings.abnormal_volume_window)
+    responses = build_daily_intraday_metrics(
+        intraday, abnormal_volume_window=settings.abnormal_volume_window
+    )
     dataset = build_research_dataset(factors, responses)
-    summary = build_quantile_summary(dataset, factor_name="net_gamma_exposure", target_name="next_day_realized_variance", quantiles=5)
+    summary = build_quantile_summary(
+        dataset,
+        factor_name="net_gamma_exposure",
+        target_name="next_day_realized_variance",
+        quantiles=5,
+    )
     report_path = destination / "gamma_exposure_report.html"
-    write_html_report(output_path=report_path, quantile_summary=summary, title="SPY Gamma Exposure Report")
+    write_html_report(
+        output_path=report_path,
+        quantile_summary=summary,
+        title="SPY Gamma Exposure Report",
+    )
     return report_path
 ```
 
@@ -1382,7 +1514,9 @@ git commit -m "feat: add end-to-end gamma exposure pipeline"
 Append to `tests/research/test_descriptive.py`:
 
 ```python
-from gamma_exposure_engine.research.descriptive import build_near_spot_sensitivity_summary
+from gamma_exposure_engine.research.descriptive import (
+    build_near_spot_sensitivity_summary,
+)
 
 
 def test_build_near_spot_sensitivity_summary_returns_one_row_per_band() -> None:
@@ -1410,7 +1544,9 @@ Expected: FAIL because the robustness helper does not exist
 Append to `gamma_exposure_engine/research/descriptive.py`:
 
 ```python
-def build_near_spot_sensitivity_summary(frame: pl.DataFrame, bands: list[float]) -> pl.DataFrame:
+def build_near_spot_sensitivity_summary(
+    frame: pl.DataFrame, bands: list[float]
+) -> pl.DataFrame:
     """Summarize target means under alternative near-spot band assumptions."""
 
     rows: list[dict[str, float]] = []

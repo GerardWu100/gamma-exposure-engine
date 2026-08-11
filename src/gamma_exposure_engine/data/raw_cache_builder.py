@@ -13,8 +13,12 @@ from pathlib import Path
 import polars as pl
 
 from gamma_exposure_engine.data.clickhouse_client import create_clickhouse_client
-from gamma_exposure_engine.data.intraday_queries import fetch_intraday_bars_from_clickhouse
-from gamma_exposure_engine.data.options_queries import fetch_options_snapshot_from_clickhouse
+from gamma_exposure_engine.data.intraday_queries import (
+    fetch_intraday_bars_from_clickhouse,
+)
+from gamma_exposure_engine.data.options_queries import (
+    fetch_options_snapshot_from_clickhouse,
+)
 from gamma_exposure_engine.data.raw_store import resolve_raw_data_paths
 from gamma_exposure_engine.settings import load_settings
 

@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from typer.testing import CliRunner
-
 from gamma_exposure_engine.cli import app
+from typer.testing import CliRunner
 
 
 def test_run_offline_analysis_command_invokes_pipeline_with_overrides(

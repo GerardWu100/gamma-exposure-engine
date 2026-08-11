@@ -6,8 +6,9 @@ from datetime import date, datetime
 from pathlib import Path
 
 import polars as pl
-
-from gamma_exposure_engine.data.raw_cache_builder import refresh_raw_cache_from_clickhouse
+from gamma_exposure_engine.data.raw_cache_builder import (
+    refresh_raw_cache_from_clickhouse,
+)
 
 
 def test_refresh_raw_cache_from_clickhouse_writes_parquet_and_manifest(

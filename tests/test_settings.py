@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-
 from gamma_exposure_engine.settings import load_settings
 
 

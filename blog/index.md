@@ -70,11 +70,7 @@ cleaner makes that data contract explicit:
 
 ```python
 open_interest_weighted_gamma = (
-    open_interest
-    * CONTRACT_MULTIPLIER
-    * spot_close
-    * spot_close
-    * gamma
+    open_interest * CONTRACT_MULTIPLIER * spot_close * spot_close * gamma
 )
 ```
 

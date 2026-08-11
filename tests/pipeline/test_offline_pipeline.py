@@ -7,7 +7,6 @@ from pathlib import Path
 
 import polars as pl
 import pytest
-
 from gamma_exposure_engine.pipeline.offline_pipeline import run_offline_analysis
 
 

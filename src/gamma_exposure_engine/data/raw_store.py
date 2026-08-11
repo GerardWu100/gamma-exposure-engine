@@ -173,7 +173,9 @@ def _filter_inclusive_date_range(
 
     inclusive_start = date.fromisoformat(start_date)
     inclusive_end = date.fromisoformat(end_date)
-    date_expression = pl.col(date_column) if isinstance(date_column, str) else date_column
+    date_expression = (
+        pl.col(date_column) if isinstance(date_column, str) else date_column
+    )
     return frame.filter(
         date_expression.is_between(
             inclusive_start,

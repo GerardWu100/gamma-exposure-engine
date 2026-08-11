@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import polars as pl
 import pytest
-
 from gamma_exposure_engine.research.statistical_tests import (
     build_statistical_test_summary,
 )

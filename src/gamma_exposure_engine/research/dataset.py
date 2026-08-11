@@ -60,9 +60,7 @@ def _build_exposure_calendar(exposures: pl.DataFrame) -> pl.DataFrame:
     ordered_exposures = exposures.sort(TRADE_DATE_COLUMN)
     return ordered_exposures.with_columns(
         # The next exposure date defines the only allowed response match.
-        pl.col(TRADE_DATE_COLUMN)
-        .shift(-1)
-        .alias(NEXT_EXPOSURE_DATE_COLUMN)
+        pl.col(TRADE_DATE_COLUMN).shift(-1).alias(NEXT_EXPOSURE_DATE_COLUMN)
     )
 
 
@@ -80,10 +78,12 @@ def _build_response_payload(responses: pl.DataFrame) -> pl.DataFrame:
         for column_name in response_columns
     }
 
-    return ordered_responses.rename(renamed_columns).rename(
-        {TRADE_DATE_COLUMN: RESPONSE_TRADE_DATE_COLUMN}
-    ).with_columns(
-        pl.col(RESPONSE_TRADE_DATE_COLUMN).alias(RESPONSE_JOIN_DATE_COLUMN)
+    return (
+        ordered_responses.rename(renamed_columns)
+        .rename({TRADE_DATE_COLUMN: RESPONSE_TRADE_DATE_COLUMN})
+        .with_columns(
+            pl.col(RESPONSE_TRADE_DATE_COLUMN).alias(RESPONSE_JOIN_DATE_COLUMN)
+        )
     )
 
 

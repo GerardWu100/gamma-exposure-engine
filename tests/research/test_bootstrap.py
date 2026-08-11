@@ -7,7 +7,6 @@ adding reproducible percentile confidence intervals around each bucket mean.
 from __future__ import annotations
 
 import polars as pl
-
 from gamma_exposure_engine.research.bootstrap import build_quantile_summary_with_ci
 
 

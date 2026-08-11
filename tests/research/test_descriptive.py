@@ -10,7 +10,6 @@ from __future__ import annotations
 from datetime import date
 
 import polars as pl
-
 from gamma_exposure_engine.research.descriptive import (
     build_alternative_band_sensitivity,
     build_leave_one_month_out_sensitivity,

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import polars as pl
 import pytest
-
 from gamma_exposure_engine.research.multi_factor import (
     build_factor_factor_correlations,
     build_factor_target_correlations,
