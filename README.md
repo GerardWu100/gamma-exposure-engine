@@ -1,44 +1,49 @@
 # Gamma Exposure Engine
 
-[![CI](https://github.com/frenzied-org/gamma-exposure-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/frenzied-org/gamma-exposure-engine/actions/workflows/ci.yml)
+Offline research project that asks whether the daily options gamma structure
+of `SPY` is associated with next-day intraday market behavior. It ships a
+fixed demo dataset, a CLI pipeline, and a teaching notebook that walks the
+full analysis end to end.
 
-**What does the observable structure of SPY option gamma tell us about next-day intraday market behavior?**
+## What it does
 
-This repository is an offline-first, interview-defensible quantitative finance
-research project for `SPY`. The main artifact is a teaching notebook that
-walks from local raw Parquet inputs to descriptive, inferential, robustness,
-regime, and predictive results.
+The engine takes local Parquet snapshots of SPY intraday bars and SPY options
+chains, builds daily open-interest-weighted gamma-mass factors (the raw data
+has no dealer/owner position sign, so this is unsigned exposure, not signed
+dealer gamma), and aligns day `t` exposure with day `t+1` market response
+(realized variance, return magnitude, volume anomalies, pinning-like
+behavior near round strikes).
 
-## Hiring Narrative
+It then runs:
 
-The project studies whether daily unsigned options gamma structure is associated with
-next-day realized variance, intraday return magnitude, volume anomalies, and
-pinning-like behavior. The raw schema has open interest and option Greeks, but
-no owner or dealer-position sign. The engine therefore reports
-open-interest-weighted gamma mass and does not label it dealer gamma exposure.
-It is intentionally transparent:
+- descriptive statistics by exposure quantile
+- non-parametric inferential tests
+- volatility-regime splits
+- robustness checks across alternate near-spot bands
+- a walk-forward Ridge regression predictive baseline
 
-- one symbol (`SPY`)
-- one canonical raw-data contract (`data/raw/`)
-- one reproducible offline CLI path
-- one teaching notebook (`notebooks/gamma_exposure_pipeline_demo.ipynb`)
+This is an empirical association study, not a causal claim. See
+`docs/reference/offline-data-contract.md` for the exact input schema and
+`GUIDE_ROOT.md` for the full pipeline walkthrough.
 
-This is an empirical association project, not a causal inference claim.
+## Requirements
 
-## Offline Runtime Contract
+- Python >= 3.13
+- No external services for normal use. Offline analysis reads only local
+  Parquet files under `data/raw/` and never touches ClickHouse or `.env`.
+- Optional: a local ClickHouse instance, only if you want to refresh the raw
+  demo data (see Usage below). Credentials for that path are read from `.env`
+  as `CLICKHOUSE_USER` and `CLICKHOUSE_PASSWORD`; `CLICKHOUSE_HOST`,
+  `CLICKHOUSE_PORT`, `CLICKHOUSE_SECURE`, and `CLICKHOUSE_VERIFY` can override
+  the defaults in `config.toml`. See `.env.example`.
 
-Normal usage requires only these committed files:
+## Setup
 
-- `data/raw/SPY_intraday_bars.parquet`
-- `data/raw/SPY_options_snapshot.parquet`
-- `data/raw/manifest.json`
+```bash
+uv sync
+```
 
-Offline analysis never connects to ClickHouse, never requires `.env`, and fails
-fast if raw files are missing.
-
-See `docs/reference/offline-data-contract.md` for required columns and coverage.
-
-## Quick Start (Offline)
+## Usage
 
 Run the offline pipeline against the committed demo range:
 
@@ -52,73 +57,65 @@ Run tests:
 uv run pytest -v
 ```
 
-Execute the teaching notebook end-to-end:
+Execute the teaching notebook end to end:
 
 ```bash
 uv run jupyter nbconvert --to notebook --execute notebooks/gamma_exposure_pipeline_demo.ipynb --output gamma_exposure_pipeline_demo.executed.ipynb
 ```
 
-## Optional Raw Refresh (Maintenance Only)
-
-If you have ClickHouse access and want to refresh or expand the demo payload:
+Optional maintenance-only step, if you have ClickHouse access and want to
+refresh or expand the raw demo data:
 
 ```bash
 uv run gex refresh-raw-cache --start 2024-01-02 --end 2024-12-31
 ```
 
-This command is optional and separate from normal execution.
-
 See `docs/reference/clickhouse-raw-cache-refresh.md` for details.
 
-## Offline Outputs
+## Configuration
 
-`gex run-offline-analysis` writes simple, non-HTML artifacts under the chosen
-output directory, including:
+`config.toml` holds non-secret runtime defaults. The knobs most worth knowing:
 
-- aligned research dataset (`research_dataset.parquet`)
-- quantile summary (`quantile_summary.csv`)
-- statistical tests (`statistical_tests.csv`)
-- regime summary (`regime_summary.csv`)
-- predictive comparison (`predictive_comparison.csv`)
-- robustness, diagnostics, and correlation tables (`.csv`)
-- run manifest (`run_manifest.json`)
+- `research.default_factor_name` / `research.default_target_name`: the
+  exposure factor and next-day response column used when the CLI flags are
+  omitted.
+- `research.near_spot_band_width` and `research.robustness_band_widths`: the
+  moneyness band used for the near-spot factor and the alternates checked in
+  the robustness table.
+- `research.bootstrap_iterations` / `research.bootstrap_confidence_level`:
+  bootstrap resampling settings for confidence intervals.
+- `clickhouse.*`: non-secret connection defaults; credentials live in `.env`.
 
-These files are the backbone for interview walkthroughs and future blog writing.
+## Layout
 
-## Notebook Teaching Flow
-
-`notebooks/gamma_exposure_pipeline_demo.ipynb` is the human-facing centerpiece.
-It teaches the full offline pipeline:
-
-1. inspect raw local data contract
-2. build spot close and clean options
-3. construct gamma factors and response metrics
-4. align day `t` exposures with day `t+1` responses
-5. run descriptive and inferential summaries
-6. run regime, robustness, and predictive checks
-7. interpret findings and limitations honestly
-
-## Interview Explanation Tips
-
-A concise interview explanation can follow this structure:
-
-1. **Question:** does gamma positioning relate to next-day market behavior?
-2. **Data contract:** two local raw files, fixed schema, fixed date window.
-3. **Method:** clean -> aggregate unsigned gamma-mass factors -> align `t` to `t+1` -> analyze.
-4. **Evidence:** quantile means, non-parametric tests, regime splits,
-   robustness checks, and walk-forward prediction baselines.
-5. **Limitations:** association only, sample-window dependence, single symbol,
-   sensitivity to options cleaning conventions, and no observed position sign.
-
-## Project Layout
-
-- `src/gamma_exposure_engine/data/`: local raw loaders and optional ClickHouse refresh tooling
-- `src/gamma_exposure_engine/exposure/`: options cleaning and gamma factor construction
-- `src/gamma_exposure_engine/intraday/`: realized variance and response metrics
-- `src/gamma_exposure_engine/research/`: descriptive, inferential, robustness, regime, predictive modules
+- `src/gamma_exposure_engine/data/`: local raw loaders and the optional
+  ClickHouse refresh tool
+- `src/gamma_exposure_engine/exposure/`: options cleaning and gamma factor
+  construction
+- `src/gamma_exposure_engine/intraday/`: realized variance and response
+  metrics
+- `src/gamma_exposure_engine/research/`: descriptive, inferential,
+  robustness, regime, and predictive modules
 - `src/gamma_exposure_engine/pipeline/`: linear offline orchestration
-- `src/gamma_exposure_engine/cli.py`: Typer commands for offline run and optional refresh
-- `config.toml`: runtime defaults for paths, research knobs, and raw-data contract
-- `docs/reference/`: hard-contract documentation
-- `notebooks/`: teaching notebook
+- `src/gamma_exposure_engine/cli.py`: Typer commands for offline run and
+  optional refresh
+- `notebooks/`: the teaching notebook
+- `docs/reference/`: the raw-data contract and refresh procedure
 - `tests/`: unit and smoke coverage
+
+## Output
+
+`gex run-offline-analysis` writes plain Parquet/CSV/JSON artifacts to the
+chosen output directory:
+
+- `research_dataset.parquet`: aligned day-`t` exposure and day-`t+1` response
+- `quantile_summary.csv`, `statistical_tests.csv`: descriptive and inferential
+  results
+- `regime_summary.csv`: results split by volatility regime
+- `predictive_comparison.csv`: walk-forward predictive baseline comparison
+- robustness, diagnostics, and correlation tables (`.csv`)
+- `run_manifest.json`: run metadata
+
+## License
+
+All rights reserved. See [LICENSE](LICENSE).
