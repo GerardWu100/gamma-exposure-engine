@@ -168,17 +168,17 @@
 
 <p class="eyebrow"><span class="dot"></span>gamma-exposure-engine &middot; offline research pipeline &middot; code walkthrough</p>
 <h1>Gamma Exposure Engine: reading the code</h1>
-<p class="lede">What the project does, how the folders fit together, what each stage puts in and takes out, and the traps a reader should know about before trusting a number.</p>
+<p class="lede">What the project does, how its folders fit together, what each stage takes in and returns, and what to check before trusting a number.</p>
 
 <div class="box def">
   <span class="k">How to use this</span>
-  <p>Sections follow the order the pipeline runs in. Every code snippet is copied from the files under <code>src/gamma_exposure_engine/</code>, unedited. Every number in a <b>Sample data</b> box came from actually running the project on the committed demo files (<code>data/raw/</code>, 2 January to 31 January 2024), not from an estimate. Coloured boxes flag design choices, traps, and honest weaknesses.</p>
+  <p>The sections follow the pipeline from start to finish. Every code snippet is copied unchanged from <code>src/gamma_exposure_engine/</code>. Every number in a <b>Sample data</b> box comes from running the project on the committed demo files (<code>data/raw/</code>, 2 January to 31 January 2024). Coloured boxes mark design choices, traps, and weaknesses.</p>
 </div>
 
 <div class="box why">
   <span class="k">The process in plain English</span>
-  <p>The project asks one question: does the shape of SPY option gamma at today's close tell you anything about how SPY behaves tomorrow? It reads two local Parquet files (one minute of SPY price bars per row, one option contract per row), throws away option rows that cannot be used, turns each surviving contract into a single "gamma mass" number, sums those into six daily descriptions of the option surface, reduces the minute bars into seven daily measures of how the market actually moved, pairs day <em>t</em>'s option picture with day <em>t+1</em>'s market behaviour, and then runs a standard battery of summaries and tests on those pairs.</p>
-  <p>On the shipped one-month sample the honest answer is: no measurable relationship. The headline rank correlation is 0.030 with a p-value of 0.90 on 20 paired days. The code is built to make that kind of null result visible rather than to hide it.</p>
+  <p>The project asks one question: does the shape of SPY option gamma at today's close tell us anything about how SPY behaves tomorrow? It reads two local Parquet files, a column-based file format: one row per minute of SPY price bars and one row per option contract. It removes unusable option rows, gives each remaining contract one "gamma mass" value, and sums those values into six daily descriptions of the option surface, meaning the pattern of gamma across strikes and expiries. It also turns the minute bars into seven daily measures of market behaviour. Finally, it pairs day <em>t</em>'s option data with day <em>t+1</em>'s market data and tests the pairs.</p>
+  <p>For the shipped one-month sample, the answer is no measurable relationship. The headline rank correlation, which compares the order of two series, is 0.030. Its p-value, the probability of seeing a result this extreme if there were no relationship, is 0.90 across 20 paired days. The code reports that null result instead of hiding it.</p>
 </div>
 
 <h2 id="map"><span class="sec-no">00</span>Map</h2>
@@ -197,7 +197,7 @@ flowchart LR
   ds --> res["research modules"]
   res --> out[("outputs/*.csv and *.parquet")]
 </div>
-<p class="fnote">Boxes are functions. The two cylinders are files on disk. Arrows show which way the data moves. The single join point is <code>build_research_dataset()</code>: everything to its left is measurement, everything to its right is analysis.</p>
+<p class="fnote">Boxes are functions. The cylinders are files on disk. Arrows show the data flow. The only join point is <code>build_research_dataset()</code>: measurement happens to its left; analysis happens to its right.</p>
 
 <div class="toc">
   <div class="rk">Contents</div>
@@ -225,61 +225,61 @@ flowchart LR
 
 <h2 id="question"><span class="sec-no">01</span>The question, and what the data can honestly answer</h2>
 
-<p>The research question is written at the top of <code>README.md</code>: <em>what does the observable structure of SPY option gamma tell us about next-day intraday market behaviour?</em></p>
+<p>The research question appears at the top of <code>README.md</code>: <em>what does the observable structure of SPY option gamma tell us about next-day intraday market behaviour?</em></p>
 
-<p>Two pieces of vocabulary first, because everything else rests on them.</p>
+<p>Two terms matter first.</p>
 
-<p><b>Gamma</b> is the rate at which an option's delta changes when the underlying price moves. Delta is the option's sensitivity to a one dollar move in the underlying; gamma is the sensitivity of that sensitivity. A large gamma means the hedge an option holder needs keeps changing as the price moves, which is why gamma is normally discussed alongside hedging flow.</p>
+<p><b>Gamma</b> is how quickly an option's delta changes when the underlying price moves. Delta is the option's sensitivity to a one-dollar move in the underlying; gamma is the sensitivity of delta itself. With high gamma, the hedge an option holder needs changes quickly as the price moves, so gamma is often discussed with hedging flow.</p>
 
-<p><b>Open interest</b> is the number of contracts currently outstanding at a given strike and expiry. It is an unsigned count: it says how many contracts exist, not who is long and who is short.</p>
+<p><b>Open interest</b> is the number of contracts outstanding at a given strike and expiry. It is unsigned: it counts contracts but does not show who is long or short.</p>
 
 <div class="box flag"><span class="k">The central honesty constraint</span>
-<p>Most published "gamma exposure" work assigns a sign: dealers are assumed short calls and long puts, so their gamma is negative in one region and positive in another, and the sign predicts whether hedging dampens or amplifies moves. <b>This project cannot do that.</b> The raw option schema (listed in <code>docs/reference/offline-data-contract.md</code>) has no account owner, no customer-versus-dealer flag, no trade direction, and no position sign. So the code deliberately computes an <em>unsigned</em> quantity, calls it "gamma mass", and never claims it measures dealer inventory. Rows with negative gamma are rejected as bad input rather than reinterpreted as short positions. The column names carry this: <code>total_open_interest_weighted_gamma</code>, not <code>dealer_gamma_exposure</code>.</p></div>
+<p>Many published "gamma exposure" studies assign a sign by assuming dealers are short calls and long puts. That sign is then used to say whether hedging dampens or amplifies moves. <b>This project cannot do that.</b> The raw option schema (listed in <code>docs/reference/offline-data-contract.md</code>) has no account owner, customer-versus-dealer flag, trade direction, or position sign. The code therefore computes an <em>unsigned</em> quantity called "gamma mass" and does not claim to measure dealer inventory. Negative gamma is rejected as bad input, not treated as a short position. The column names make this explicit: <code>total_open_interest_weighted_gamma</code>, not <code>dealer_gamma_exposure</code>.</p></div>
 
 <div class="box why"><span class="k">Why the project is offline-first</span>
-<p>Normal execution reads only three committed files and never opens a network connection. That makes the whole result reproducible on any machine with the repository, which matters for a project whose stated purpose is to be walked through and defended. The ClickHouse database code still exists but is quarantined in one module that the analysis path never imports.</p></div>
+<p>A normal run reads three committed files and never opens a network connection. Anyone with the repository can therefore reproduce the result. The ClickHouse database code remains available for refreshes, but the analysis path never imports it.</p></div>
 
 <h2 id="layout"><span class="sec-no">02</span>Folder layout &mdash; what lives where</h2>
 
 <div class="scroll">
 <table>
-<thead><tr><th>Path</th><th>Lines</th><th>What it is responsible for</th></tr></thead>
+<thead><tr><th>Path</th><th>Lines</th><th>What it does</th></tr></thead>
 <tbody>
-<tr><td><code>config.toml</code></td><td class="n">51</td><td>Every tunable number in the project, with a comment on each.</td></tr>
-<tr><td><code>src/gamma_exposure_engine/settings.py</code></td><td class="n">224</td><td>Reads <code>config.toml</code> and <code>.env</code> into frozen typed dataclasses. Nothing else parses configuration.</td></tr>
-<tr><td><code>src/gamma_exposure_engine/cli.py</code></td><td class="n">92</td><td>Two Typer commands. Thin: it parses arguments, calls one function, prints the returned manifest as JSON.</td></tr>
-<tr><td><code>data/raw_store.py</code></td><td class="n">228</td><td>The only data entry point for normal runs. Reads local Parquet, checks required columns, filters to a date range.</td></tr>
-<tr><td><code>data/raw_cache_builder.py</code>, <code>clickhouse_client.py</code>, <code>intraday_queries.py</code>, <code>options_queries.py</code></td><td class="n">397</td><td>The optional refresh path. Imported only by <code>gex refresh-raw-cache</code>.</td></tr>
-<tr><td><code>exposure/cleaning.py</code></td><td class="n">289</td><td>Drops unusable option rows, keeps a count of why each was dropped, computes per-contract gamma mass.</td></tr>
-<tr><td><code>exposure/aggregation.py</code></td><td class="n">336</td><td>Rolls contracts up to strike level, expiry level, and one row per trade date with six factors.</td></tr>
-<tr><td><code>intraday/metrics.py</code></td><td class="n">254</td><td>Reduces minute bars to one row per trade date: realized variance, return sizes, volume, pinning distance.</td></tr>
-<tr><td><code>research/dataset.py</code></td><td class="n">106</td><td>The alignment step. Joins exposures on day <em>t</em> to responses on the next observed day.</td></tr>
-<tr><td><code>research/descriptive.py</code></td><td class="n">462</td><td>Quantile buckets, threshold splits, first-half versus second-half stability, alternative bands, leave-one-month-out.</td></tr>
-<tr><td><code>research/bootstrap.py</code></td><td class="n">197</td><td>Percentile confidence bands around the bucket means.</td></tr>
-<tr><td><code>research/statistical_tests.py</code></td><td class="n">185</td><td>Spearman rank correlation and the Kruskal-Wallis test.</td></tr>
-<tr><td><code>research/regime.py</code></td><td class="n">172</td><td>Splits days into calm and volatile states, then repeats the bucket summary inside each.</td></tr>
-<tr><td><code>research/multi_factor.py</code></td><td class="n">143</td><td>Factor-versus-target and factor-versus-factor rank correlation matrices.</td></tr>
-<tr><td><code>research/predictive.py</code></td><td class="n">582</td><td>Walk-forward linear and ridge forecasts against a naive lagged baseline.</td></tr>
-<tr><td><code>pipeline/offline_pipeline.py</code></td><td class="n">340</td><td>Calls all of the above once, in order, and writes fifteen tables plus a manifest.</td></tr>
-<tr><td><code>tests/</code></td><td class="n">~2,900</td><td>77 tests. All pass; one ClickHouse smoke test is skipped unless an environment variable is set.</td></tr>
+<tr><td><code>config.toml</code></td><td class="n">51</td><td>Stores every tunable number, with a comment for each.</td></tr>
+<tr><td><code>src/gamma_exposure_engine/settings.py</code></td><td class="n">224</td><td>Reads <code>config.toml</code> and <code>.env</code> into frozen, typed dataclasses. No other file parses configuration.</td></tr>
+<tr><td><code>src/gamma_exposure_engine/cli.py</code></td><td class="n">92</td><td>Defines two Typer commands. It parses arguments, calls one function, and prints the returned manifest as JSON (JavaScript Object Notation).</td></tr>
+<tr><td><code>data/raw_store.py</code></td><td class="n">228</td><td>The normal run's only data entry point. It reads local Parquet, checks required columns, and filters by date.</td></tr>
+<tr><td><code>data/raw_cache_builder.py</code>, <code>clickhouse_client.py</code>, <code>intraday_queries.py</code>, <code>options_queries.py</code></td><td class="n">397</td><td>Builds the optional refresh path. Only <code>gex refresh-raw-cache</code> imports it.</td></tr>
+<tr><td><code>exposure/cleaning.py</code></td><td class="n">289</td><td>Removes unusable option rows, counts each removal reason, and computes gamma mass per contract.</td></tr>
+<tr><td><code>exposure/aggregation.py</code></td><td class="n">336</td><td>Aggregates contracts by strike, expiry, and trade date, then builds six factors.</td></tr>
+<tr><td><code>intraday/metrics.py</code></td><td class="n">254</td><td>Reduces minute bars to one row per trade date with variance, return size, volume, and pinning distance.</td></tr>
+<tr><td><code>research/dataset.py</code></td><td class="n">106</td><td>Pairs exposures on day <em>t</em> with responses on the next observed day.</td></tr>
+<tr><td><code>research/descriptive.py</code></td><td class="n">462</td><td>Builds quantile buckets, threshold splits, subperiod checks, alternative bands, and leave-one-month-out results.</td></tr>
+<tr><td><code>research/bootstrap.py</code></td><td class="n">197</td><td>Builds percentile confidence bands around bucket means.</td></tr>
+<tr><td><code>research/statistical_tests.py</code></td><td class="n">185</td><td>Computes Spearman rank correlation and the Kruskal-Wallis test.</td></tr>
+<tr><td><code>research/regime.py</code></td><td class="n">172</td><td>Splits days into calm and volatile states, then repeats the bucket summary for each state.</td></tr>
+<tr><td><code>research/multi_factor.py</code></td><td class="n">143</td><td>Builds rank-correlation matrices for factors and targets.</td></tr>
+<tr><td><code>research/predictive.py</code></td><td class="n">582</td><td>Builds walk-forward linear and ridge forecasts and compares them with a lagged baseline.</td></tr>
+<tr><td><code>pipeline/offline_pipeline.py</code></td><td class="n">340</td><td>Runs the stages in order and writes fifteen tables plus a manifest.</td></tr>
+<tr><td><code>tests/</code></td><td class="n">~2,900</td><td>Contains 77 tests. All pass; one ClickHouse smoke test is skipped unless an environment variable is set.</td></tr>
 </tbody>
 </table>
 </div>
 
 <div class="box why"><span class="k">Why the folders are split this way</span>
-<p>The split is by <em>stage of the pipeline</em>, not by technical layer. <code>exposure</code> knows about options and nothing about the market's later behaviour; <code>intraday</code> knows about price bars and nothing about options; <code>research</code> knows about neither, only about a table with a factor column and a target column. That means you can read any one folder without holding the others in your head, and a change to how gamma mass is defined cannot accidentally alter how a p-value is computed.</p></div>
+<p>The folders are split by <em>pipeline stage</em>, not by technical layer. <code>exposure</code> handles options, <code>intraday</code> handles price bars, and <code>research</code> handles tables with factor and target columns. A change to gamma mass therefore cannot change how a p-value is computed.</p></div>
 
 <h2 id="entry"><span class="sec-no">03</span>Entry points &mdash; <code>gex</code> and the notebook</h2>
 
-<p>There are three ways to run this code. They all end up calling the same functions.</p>
+<p>There are three entry points, and all call the same functions.</p>
 
 <div class="scroll">
 <table>
 <thead><tr><th>Entry point</th><th>What it does</th><th>Needs the network?</th></tr></thead>
 <tbody>
-<tr><td><code>uv run gex run-offline-analysis</code></td><td>The whole pipeline. Writes fifteen tables and <code>run_manifest.json</code> to a directory you choose.</td><td>No</td></tr>
-<tr><td><code>uv run gex refresh-raw-cache</code></td><td>Maintenance only. Pulls fresh rows from ClickHouse and overwrites the files in <code>data/raw/</code>.</td><td>Yes, plus credentials in <code>.env</code></td></tr>
-<tr><td><code>notebooks/gamma_exposure_pipeline_demo.ipynb</code></td><td>Twenty-two cells that reproduce the pipeline stage by stage so a reader can inspect the frame after each step.</td><td>No</td></tr>
+<tr><td><code>uv run gex run-offline-analysis</code></td><td>Runs the full pipeline and writes fifteen tables plus <code>run_manifest.json</code> to a directory you choose.</td><td>No</td></tr>
+<tr><td><code>uv run gex refresh-raw-cache</code></td><td>Maintenance command. Pulls fresh rows from ClickHouse and overwrites <code>data/raw/</code>.</td><td>Yes, plus credentials in <code>.env</code></td></tr>
+<tr><td><code>notebooks/gamma_exposure_pipeline_demo.ipynb</code></td><td>Uses twenty-two cells to run the pipeline stage by stage and show the frame after each step.</td><td>No</td></tr>
 </tbody>
 </table>
 </div>
@@ -289,45 +289,45 @@ uv run gex run-offline-analysis \
   --start 2024-01-02 --end 2024-01-31 \
   --output-dir outputs/demo</pre>
 
-<p>Both commands take <code>--symbol</code>, <code>--raw-dir</code>, and <code>--verbose</code>. The analysis command additionally takes <code>--factor</code> and <code>--target</code> to override which column pair the summaries focus on. Anything not passed falls back to <code>config.toml</code>.</p>
+<p>Both commands accept <code>--symbol</code>, <code>--raw-dir</code>, and <code>--verbose</code>. The analysis command also accepts <code>--factor</code> and <code>--target</code> to choose the columns used in the summaries. Unset options use <code>config.toml</code>.</p>
 
-<div class="box def"><span class="k">What the CLI itself contains</span>
-<p><b>Input:</b> command-line strings. <b>Output:</b> a JSON manifest printed to standard output. <b>Role:</b> nothing more. <code>cli.py</code> has no analysis logic at all &mdash; it configures logging, calls <code>run_offline_analysis()</code> or <code>refresh_raw_cache_from_clickhouse()</code>, and prints the dictionary that comes back. That is why the notebook can reproduce the pipeline exactly: it imports the same functions.</p></div>
+<div class="box def"><span class="k">What the command-line interface contains</span>
+<p><b>Input:</b> command-line strings. <b>Output:</b> a JSON manifest printed to standard output. <b>Role:</b> dispatch only. <code>cli.py</code> contains no analysis logic; it configures logging, calls <code>run_offline_analysis()</code> or <code>refresh_raw_cache_from_clickhouse()</code>, and prints the returned dictionary. The notebook reproduces the pipeline by importing those same functions.</p></div>
 
 <h2 id="config"><span class="sec-no">04</span>Configuration &mdash; <code>config.toml</code> and <code>settings.py</code></h2>
 
-<p><code>settings.py</code> resolves the project root from the file's own location, so the code works no matter which directory you launch it from:</p>
+<p><code>settings.py</code> finds the project root from its own location, so the launch directory does not matter:</p>
 
 <pre>PACKAGE_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = PACKAGE_ROOT.parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config.toml"
 ENV_PATH = PROJECT_ROOT / ".env"</pre>
 
-<p>Every setting lands in a frozen dataclass, so nothing downstream can mutate it. Here is what each research knob actually changes.</p>
+<p>Each setting becomes a frozen dataclass, so later code cannot change it. These are the settings that affect the research.</p>
 
 <div class="scroll">
 <table>
-<thead><tr><th>Setting</th><th>Value</th><th>What changing it does</th></tr></thead>
+<thead><tr><th>Setting</th><th>Value</th><th>Effect</th></tr></thead>
 <tbody>
-<tr><td><code>near_spot_band_width</code></td><td class="n">0.02</td><td>Defines "near the money". Widening it moves more gamma mass into <code>near_spot_gamma_mass_share</code>, pushing that factor toward 1 and flattening its variation across days.</td></tr>
-<tr><td><code>abnormal_volume_window</code></td><td class="n">20</td><td>How many earlier trade dates form the volume baseline. Smaller reacts faster and is noisier; larger needs more history before the score is meaningful.</td></tr>
-<tr><td><code>quantile_count</code></td><td class="n">5</td><td>Number of buckets the factor is sorted into. With 20 paired days this gives four observations per bucket, which is why the confidence bands are wide.</td></tr>
-<tr><td><code>pinning_candidate_count</code></td><td class="n">5</td><td>How many of the biggest gamma strikes are kept as "pin candidates". Raising it can only shrink the reported pinning distance, because the distance is a minimum over the candidates.</td></tr>
-<tr><td><code>predictive_min_train_size</code></td><td class="n">20</td><td>How many rows must exist before the first walk-forward forecast. <b>On the shipped 20-row sample this produces zero forecasts.</b></td></tr>
-<tr><td><code>near_spot_share_thresholds</code></td><td class="n">0.2, 0.4, 0.6</td><td>Cut points for the high-versus-low near-spot-share split. On the demo data the observed share never exceeds 0.32, so two of the three cut points produce an empty group.</td></tr>
-<tr><td><code>default_factor_name</code></td><td>total_open_interest_weighted_gamma</td><td>Which of the six exposure columns the headline summaries use.</td></tr>
-<tr><td><code>default_target_name</code></td><td>next_day_realized_variance</td><td>Which of the seven response columns the headline summaries use.</td></tr>
-<tr><td><code>bootstrap_iterations</code></td><td class="n">1000</td><td>Resamples behind the confidence band. More is smoother and slower; it does not make a small sample larger.</td></tr>
+<tr><td><code>near_spot_band_width</code></td><td class="n">0.02</td><td>Defines "near the money". Widening it puts more gamma mass in <code>near_spot_gamma_mass_share</code>, moving that factor toward 1 and reducing day-to-day variation.</td></tr>
+<tr><td><code>abnormal_volume_window</code></td><td class="n">20</td><td>Number of earlier trade dates used for the volume baseline. A smaller value reacts faster but is noisier; a larger value needs more history.</td></tr>
+<tr><td><code>quantile_count</code></td><td class="n">5</td><td>Number of factor buckets. With 20 paired days, each bucket has four observations, so the confidence bands are wide.</td></tr>
+<tr><td><code>pinning_candidate_count</code></td><td class="n">5</td><td>Number of largest gamma strikes kept as "pin candidates". Raising it can only reduce the reported distance because the distance is the minimum across candidates.</td></tr>
+<tr><td><code>predictive_min_train_size</code></td><td class="n">20</td><td>Rows required before the first walk-forward forecast. <b>On the shipped 20-row sample this produces zero forecasts.</b></td></tr>
+<tr><td><code>near_spot_share_thresholds</code></td><td class="n">0.2, 0.4, 0.6</td><td>Cut points for the high-versus-low near-spot-share split. The demo share never exceeds 0.32, so two cut points produce an empty group.</td></tr>
+<tr><td><code>default_factor_name</code></td><td>total_open_interest_weighted_gamma</td><td>Exposure column used by the headline summaries.</td></tr>
+<tr><td><code>default_target_name</code></td><td>next_day_realized_variance</td><td>Response column used by the headline summaries.</td></tr>
+<tr><td><code>bootstrap_iterations</code></td><td class="n">1000</td><td>Number of resamples behind the confidence band. More is smoother and slower, but does not enlarge the sample.</td></tr>
 <tr><td><code>bootstrap_confidence_level</code></td><td class="n">0.95</td><td>Coverage of the percentile interval.</td></tr>
-<tr><td><code>regime_lookback_window</code></td><td class="n">20</td><td>Trailing days used to decide whether a day is calm or volatile. <b>On the shipped sample this produces zero classified days.</b></td></tr>
-<tr><td><code>ridge_alpha_candidates</code></td><td class="n">0.01 &hellip; 100</td><td>Penalty strengths the ridge model chooses between. The first entry doubles as the fallback when the training window is too short to cross-validate.</td></tr>
-<tr><td><code>robustness_band_widths</code></td><td class="n">0.01, 0.03, 0.05</td><td>Alternative near-spot bands re-tested from scratch. Note the configured 0.02 is deliberately not in this list, so the table shows neighbours rather than the baseline.</td></tr>
+<tr><td><code>regime_lookback_window</code></td><td class="n">20</td><td>Trailing days used to label a day calm or volatile. <b>On the shipped sample this produces zero classified days.</b></td></tr>
+<tr><td><code>ridge_alpha_candidates</code></td><td class="n">0.01 &hellip; 100</td><td>Penalty strengths considered by the ridge model. The first is also the fallback when the training window is too short for cross-validation.</td></tr>
+<tr><td><code>robustness_band_widths</code></td><td class="n">0.01, 0.03, 0.05</td><td>Alternative near-spot bands tested from scratch. The configured 0.02 is absent, so the table shows neighbouring values rather than the baseline.</td></tr>
 </tbody>
 </table>
 </div>
 
 <div class="box warn"><span class="k">Trap</span>
-<p>Two settings (<code>predictive_min_train_size = 20</code> and <code>regime_lookback_window = 20</code>) are as large as the number of rows the shipped demo data can produce (20). That is not a crash &mdash; the modules return empty tables with the correct column names &mdash; but it means three of the fifteen output files are empty on a default run, and a reader who does not check <code>run_manifest.json</code> row counts might assume the modules were never wired up. They are wired up; the window is simply longer than the sample.</p></div>
+<p>Two settings (<code>predictive_min_train_size = 20</code> and <code>regime_lookback_window = 20</code>) equal the number of rows in the demo sample. The modules therefore return empty tables with the correct columns instead of failing. Three of the fifteen output files are empty by default. Check the row counts in <code>run_manifest.json</code> before assuming a module did not run.</p></div>
 
 <h2 id="load"><span class="sec-no">05</span>Stage 1: loading the raw files &mdash; <code>raw_store.py</code></h2>
 
@@ -363,10 +363,10 @@ ENV_PATH = PROJECT_ROOT / ".env"</pre>
     return frame</pre>
 
 <div class="box gist"><span class="k">In plain words</span>
-<p>Open the file if it is there, complain clearly if it is not, and refuse to continue if it is missing a column the rest of the code will need.</p></div>
+<p>Open the file, report a clear error if it is missing, and stop if a required column is absent.</p></div>
 
 <div class="box def"><span class="k">What it does</span>
-<p><b>Input:</b> a file path, a friendly dataset name, and the tuple of column names that must exist. <b>Output:</b> a Polars frame with every raw column preserved. <b>Role:</b> the single gate between disk and the pipeline; two public loaders wrap it, one for bars and one for options, each then filtering to the requested inclusive date range.</p></div>
+<p><b>Input:</b> a file path, a dataset name, and the required column names. <b>Output:</b> a Polars DataFrame, or table, containing every raw column. <b>Role:</b> the only gate between disk and the pipeline. Two public loaders use it, one for bars and one for options, then filter to the requested inclusive date range.</p></div>
 
 <div class="box data"><span class="k">Sample data</span>
 <div class="io">
@@ -381,14 +381,14 @@ SPY    2024-01-02 04:02:00 EST   463.4239  463.4142   6269.0</pre></div>
 2024-01-02  2024-01-19  470.0   p     51646  0.0382
 2024-01-02  2024-01-02  402.0   c     ...    0.0000   &lt;- expires today</pre></div>
 </div>
-<p>Whole-sample facts: 16,689 bar rows and 168,762 option rows, both covering the same 21 trade dates from 2 January to 31 January 2024. The bars run from 04:00 to 19:59 New York time, between 755 and 842 bars per day, so the file contains pre-market and post-market bars, not only the 390 minutes of the regular session. Pre-market minutes carry 2.2 percent of the month's traded volume and post-16:00 minutes carry 7.5 percent.</p></div>
+<p>Across the full sample, there are 16,689 bar rows and 168,762 option rows covering the same 21 trade dates from 2 January to 31 January 2024. Bars run from 04:00 to 19:59 New York time, with 755 to 842 bars per day. The file therefore includes pre-market and post-market data, not just the 390-minute regular session. Pre-market minutes contain 2.2 percent of the month's volume; minutes after 16:00 contain 7.5 percent.</p></div>
 
 <div class="box why"><span class="k">Why a hard failure instead of a warning</span>
-<p>The error message tells the reader exactly what to do next: put files under <code>data/raw</code> or run the refresh command on a machine with database access. A pipeline that silently continues with a missing column produces a table full of nulls that looks like a research result. Failing at the door is cheaper than debugging that later.</p></div>
+<p>The error tells the reader what to do: put the files under <code>data/raw</code> or run the refresh command on a machine with database access. Continuing with a missing column would produce null-filled tables that could look like research results. Stopping early avoids that confusion.</p></div>
 
 <h2 id="clean"><span class="sec-no">06</span>Stage 2: spot close and cleaning &mdash; <code>cleaning.py</code></h2>
 
-<p>Before an option row can be used, it needs to know where the underlying closed that day. <code>build_spot_close_frame()</code> supplies that by taking the last bar of each trade date:</p>
+<p>Each option row needs the underlying's close for that day. <code>build_spot_close_frame()</code> supplies it by taking the last bar for each trade date:</p>
 
 <pre>def build_spot_close_frame(intraday_bars: pl.DataFrame) -> pl.DataFrame:
     <span class="c">"""Reduce minute bars to one daily close row per trade date."""</span>
@@ -402,7 +402,7 @@ SPY    2024-01-02 04:02:00 EST   463.4239  463.4142   6269.0</pre></div>
         .sort(TRADE_DATE_COLUMN)
     )</pre>
 
-<p>That frame is joined onto every option row, and then the cleaner runs.</p>
+<p>The pipeline joins that frame to every option row before cleaning.</p>
 
 <pre>cleaned = cleaned.with_columns(
     <span class="c"># Days to expiry is a simple calendar-day difference.</span>
@@ -424,18 +424,18 @@ SPY    2024-01-02 04:02:00 EST   463.4239  463.4142   6269.0</pre></div>
 )</pre>
 
 <div class="box gist"><span class="k">In plain words</span>
-<p>Throw away option rows that cannot be used, note how many were thrown away and why, and give every surviving row a single number that says how much curvature sits at that strike.</p></div>
+<p>Remove unusable option rows, record why each one was removed, and give each remaining row one number for the curvature at its strike.</p></div>
 
 <div class="box def"><span class="k">What it does</span>
-<p><b>Input:</b> one row per listed option contract per trade date, with the day's underlying close already attached. <b>Output:</b> the surviving rows plus three new columns &mdash; <code>days_to_expiry</code>, <code>moneyness</code>, <code>open_interest_weighted_gamma</code>. <b>Role:</b> everything in <code>aggregation.py</code> consumes this frame and adds no further filtering.</p></div>
+<p><b>Input:</b> one row per listed option contract and trade date, with that day's underlying close attached. <b>Output:</b> the surviving rows plus <code>days_to_expiry</code>, <code>moneyness</code>, and <code>open_interest_weighted_gamma</code>. <b>Role:</b> <code>aggregation.py</code> consumes this frame without further filtering.</p></div>
 
 <div class="box def"><span class="k">The formula</span>
 <p>$$m_{i,t}=OI_{i,t}\cdot M\cdot S_t^{2}\cdot \Gamma_{i,t}$$</p>
-<p class="fnote">$m_{i,t}$ is the gamma mass of contract $i$ on trade date $t$. $OI_{i,t}$ is open interest, a count of outstanding contracts. $M=100$ is the contract multiplier, the number of shares one listed equity option controls. $S_t$ is the underlying close in dollars on day $t$. $\Gamma_{i,t}$ is the option's gamma, the change in delta per one dollar move, in units of one over dollars. The $S_t^{2}$ term converts "delta change per dollar move" into "delta change per proportional move, expressed in dollars", which is what makes the number comparable across price levels. Multiplying $m_{i,t}$ by $0.01$ would express the same curvature for a one percent move.</p></div>
+<p class="fnote">$m_{i,t}$ is the gamma mass of contract $i$ on trade date $t$. $OI_{i,t}$ is open interest, the number of outstanding contracts. $M=100$ is the contract multiplier: one listed equity option controls 100 shares. $S_t$ is the underlying close in dollars on day $t$. $\Gamma_{i,t}$ is gamma, the change in delta per one-dollar move, measured in inverse dollars. The $S_t^{2}$ term converts a change per dollar into a change per proportional price move, expressed in dollars, making the result comparable across price levels. Multiplying $m_{i,t}$ by $0.01$ gives the same curvature for a one-percent move.</p></div>
 
 <div class="box def"><span class="k">The formula &mdash; moneyness</span>
 <p>$$k_{i,t}=\frac{K_i}{S_t}-1$$</p>
-<p class="fnote">$k_{i,t}$ is moneyness, $K_i$ is the strike price in dollars, $S_t$ is the same underlying close. It is zero at the money, positive above spot, negative below. The near-spot band later compares $|k_{i,t}|$ against a threshold.</p></div>
+<p class="fnote">$k_{i,t}$ is moneyness. $K_i$ is the strike price in dollars, and $S_t$ is the same underlying close. Moneyness is zero at the money, positive above spot, and negative below. The near-spot band later compares $|k_{i,t}|$ with a threshold.</p></div>
 
 <div class="box data"><span class="k">Sample data</span>
 <div class="io">
@@ -452,20 +452,20 @@ spot_close     459.7363</pre></div>
 moneyness                      0.0223251894618719
 open_interest_weighted_gamma   47468616780.585304
                                &lt;- 58793 x 100 x 459.7363^2 x 0.0382</pre>
-<p class="fnote">The put at the same strike carries 51,646 open interest and the same gamma, giving 41,698,232,480.909, which is why the call-versus-put imbalance for 2 January comes out slightly negative.</p></div>
+<p class="fnote">The put at the same strike has 51,646 open interest and the same gamma, giving 41,698,232,480.909. That is why the call-versus-put imbalance for 2 January is slightly negative.</p></div>
 </div>
-<p>Whole-sample counts from <code>cleaning_diagnostics.csv</code>: 168,762 rows in, 131,215 rows out. The only exclusion that fires is non-positive open interest, 37,547 rows. Missing essentials, non-positive strike, non-positive spot, expired contracts, invalid option type and negative gamma all count zero. Among the survivors, 24,331 rows have exactly zero gamma and are kept with a flag, and zero rows have a broken bid-ask quote.</p></div>
+<p>Across the full sample, <code>cleaning_diagnostics.csv</code> records 168,762 input rows and 131,215 remaining rows. The only exclusion is non-positive open interest, affecting 37,547 rows. Missing essentials, non-positive strike, non-positive spot, expired contracts, invalid option type, and negative gamma each affect zero rows. Among the remaining rows, 24,331 have exactly zero gamma and are kept with a flag; zero rows have a broken bid-ask quote.</p></div>
 
 <div class="box why"><span class="k">Why the exclusion flags are computed in sequence, not in parallel</span>
-<p><code>_build_cleaning_state()</code> builds seven boolean columns where each one is only allowed to be true if none of the earlier ones fired. A row with a null strike is counted once, under "missing essential", and never again. Without that, one bad row could be counted in four different exclusion buckets and the diagnostics table would not add up. The cost is a long chain of nested <code>any_horizontal</code> calls that is tedious to read.</p></div>
+<p><code>_build_cleaning_state()</code> builds seven true/false columns in order. Each flag can be true only when earlier flags are false. A row with a null strike is therefore counted once under "missing essential". Without this rule, one bad row could appear in four exclusion buckets and the diagnostics would not add up. The trade-off is a long chain of nested <code>any_horizontal</code> calls.</p></div>
 
 <div class="box warn"><span class="k">Trap</span>
-<p>Zero gamma survives cleaning but invalid quotes also survive, and both are only flagged. That is deliberate: a contract with a wide or crossed quote still has real open interest, and gamma mass does not depend on the quote. The trap is assuming <code>cleaned_options</code> means "trustworthy for pricing". It does not; it means "structurally safe to add up".</p></div>
+<p>Zero gamma and invalid quotes both survive cleaning with flags. That is deliberate: a wide or crossed quote still has open interest, and gamma mass does not use the quote. <code>cleaned_options</code> therefore means "safe to aggregate", not "trustworthy for pricing".</p></div>
 
 <div class="box flag"><span class="k">The weakness, stated honestly</span>
-<p>The spot close used to scale every contract is the last bar in the file, which is 19:59 New York time, not the 16:00 official close. The code has no session filter and no setting for one, so this is not a choice a reader can change from <code>config.toml</code>.</p>
-<p>It is not harmless on this data. I compared the 19:59 close against the 15:59 close on all 21 days: they differ on <b>every single day</b>, by up to \$1.61 (0.34 percent, on 30 January), with a mean absolute gap of 0.11 percent. The after-hours session is genuinely active here &mdash; 7.5 percent of the month's traded volume comes after 16:00.</p>
-<p>What it costs the factors is small but real. Gamma mass carries $S_t^2$, so using the after-hours print rather than the official close multiplies every contract's mass by a factor between 0.9933 and 1.0046. That factor is the same for every contract on a day, so it cancels exactly out of the five ratio factors and shifts only the level factor <code>total_open_interest_weighted_gamma</code>, by at most 0.5 percent. Moneyness and the near-spot band do shift slightly, because those compare each strike against this same spot. The honest summary: the level factor is off by a fraction of a percent, and the classification of a contract as near-spot can flip for strikes sitting right on the 2 percent boundary.</p></div>
+<p>The spot close used to scale each contract is the last bar in the file: 19:59 New York time, not the 16:00 official close. The code has no session filter or configuration setting for one, so <code>config.toml</code> cannot change this.</p>
+<p>This matters on the sample. The 19:59 and 15:59 closes differ on <b>every single day</b>, by up to \$1.61 (0.34 percent, on 30 January), with a mean absolute gap of 0.11 percent. After-hours trading accounts for 7.5 percent of the month's volume.</p>
+<p>Gamma mass includes $S_t^2$, so the after-hours print multiplies every contract's mass by 0.9933 to 1.0046. The factor is the same for every contract on a day, so it cancels from the five ratio factors and changes only <code>total_open_interest_weighted_gamma</code>, by at most 0.5 percent. Moneyness and the near-spot band also move slightly because they compare each strike with this spot. A strike at the 2 percent boundary can change classification.</p></div>
 
 <h2 id="factors"><span class="sec-no">07</span>Stage 3: the six daily gamma factors &mdash; <code>aggregation.py</code></h2>
 
@@ -493,38 +493,38 @@ open_interest_weighted_gamma   47468616780.585304
     return factors.sort(TRADE_DATE_COLUMN)</pre>
 
 <div class="box gist"><span class="k">In plain words</span>
-<p>Squeeze roughly six thousand option contracts per day down to six numbers that describe the shape of the option surface: how much curvature there is, how close to the current price it sits, how soon it expires, whether it clusters at one strike, and whether it leans toward calls or puts.</p></div>
+<p>Reduce roughly six thousand option contracts per day to six numbers: total curvature, distance from the current price, time to expiry, concentration at one strike, and the call-versus-put balance.</p></div>
 
 <div class="box def"><span class="k">What it does</span>
-<p><b>Input:</b> the cleaned contract frame. <b>Output:</b> exactly one row per trade date with six factor columns. <b>Role:</b> this is the left-hand side of the research question. Every day-<em>t</em> variable in the study comes from here.</p></div>
+<p><b>Input:</b> the cleaned contract table. <b>Output:</b> one row per trade date with six factor columns. <b>Role:</b> this is the input side of the research question. Every day-<em>t</em> variable comes from here.</p></div>
 
 <h3>The six factors, with their formulas</h3>
 
-<p>Throughout, $t$ is a trade date, $i$ indexes a contract, $m_{i,t}$ is the contract gamma mass from the previous section, and $G_t=\sum_i m_{i,t}$ is the daily total.</p>
+<p>Here, $t$ is a trade date, $i$ identifies a contract, $m_{i,t}$ is its gamma mass, and $G_t=\sum_i m_{i,t}$ is the daily total.</p>
 
 <div class="box def"><span class="k">1. Total gamma mass &mdash; <code>total_open_interest_weighted_gamma</code></span>
 <p>$$G_t=\sum_{i} m_{i,t}$$</p>
-<p class="fnote">The sum of every surviving contract's gamma mass on day $t$. This is the configured default factor. It is a level, in dollars, of order $10^{12}$.</p></div>
+<p class="fnote">The sum of gamma mass across all surviving contracts on day $t$. This is the configured default factor. It is a dollar level of order $10^{12}$.</p></div>
 
 <div class="box def"><span class="k">2. Near-spot share &mdash; <code>near_spot_gamma_mass_share</code></span>
 <p>$$N_t=\frac{1}{G_t}\sum_{i:\,|k_{i,t}|\le b} m_{i,t}$$</p>
-<p class="fnote">$k_{i,t}$ is moneyness, $b$ is <code>near_spot_band_width</code> (0.02, meaning plus or minus two percent around spot). $N_t$ is the fraction of the day's curvature sitting close to the current price. When $G_t\le 0$ the code returns zero rather than dividing.</p></div>
+<p class="fnote">$k_{i,t}$ is moneyness. $b$ is <code>near_spot_band_width</code> (0.02, or plus or minus two percent around spot). $N_t$ is the fraction of the day's curvature near the current price. When $G_t\le 0$, the code returns zero instead of dividing.</p></div>
 
 <div class="box def"><span class="k">3. Front-expiry share &mdash; <code>front_expiry_gamma_mass_share</code></span>
 <p>$$F_t=\frac{1}{G_t}\sum_{i:\,T_i=\min_j T_j} m_{i,t}$$</p>
-<p class="fnote">$T_i$ is contract $i$'s expiry date, and the minimum is taken over the contracts present on day $t$. $F_t$ is the fraction of curvature in the nearest expiry.</p></div>
+<p class="fnote">$T_i$ is contract $i$'s expiry date. The minimum is taken over contracts present on day $t$. $F_t$ is the fraction of curvature in the nearest expiry.</p></div>
 
 <div class="box def"><span class="k">4. Distance to the largest node &mdash; <code>largest_gamma_mass_strike_distance</code></span>
 <p>$$D_t=\big|k_{K^{\ast}_t,\,t}\big|,\qquad K^{\ast}_t=\arg\max_{K}\ \sum_{i:\,K_i=K} m_{i,t}$$</p>
-<p class="fnote">Contracts are first summed to strike level, the strike $K^{\ast}_t$ with the largest total is selected, and $D_t$ is how far that strike sits from spot in proportional terms. Ties are broken by the smaller distance first, then the lower strike, so the choice is deterministic. Strikes with zero mass are excluded before the search.</p></div>
+<p class="fnote">The code first sums contracts at each strike, selects the strike $K^{\ast}_t$ with the largest total, and measures its proportional distance from spot as $D_t$. Ties use the smaller distance, then the lower strike, so the result is deterministic. Strikes with zero mass are excluded.</p></div>
 
 <div class="box def"><span class="k">5. Call-versus-put imbalance &mdash; <code>call_put_gamma_mass_imbalance</code></span>
 <p>$$I_t=\frac{C_t-P_t}{G_t}$$</p>
-<p class="fnote">$C_t$ is the gamma mass summed over calls only, $P_t$ over puts only, and $G_t=C_t+P_t$. $I_t$ lies between $-1$ and $+1$: positive means the curvature sits more in calls. This is a composition measure, not a position sign.</p></div>
+<p class="fnote">$C_t$ is gamma mass from calls, $P_t$ is gamma mass from puts, and $G_t=C_t+P_t$. $I_t$ ranges from $-1$ to $+1$; a positive value means more curvature is in calls. This measures composition, not position sign.</p></div>
 
 <div class="box def"><span class="k">6. Concentration index &mdash; <code>gamma_mass_concentration_index</code></span>
 <p>$$H_t=\sum_{(K,T)}\left(\frac{m_{K,T,t}}{G_t}\right)^{2}$$</p>
-<p class="fnote">This is the Herfindahl-Hirschman index, a standard concentration measure. $m_{K,T,t}$ is the gamma mass summed over all contracts sharing strike $K$ and expiry $T$ on day $t$. $H_t$ is near zero when curvature is spread evenly over many strike-expiry pairs and approaches 1 when it sits almost entirely in one. The name comes from industrial economics, where the same sum of squared market shares measures how concentrated an industry is.</p></div>
+<p class="fnote">This is the Herfindahl-Hirschman Index (HHI), a standard concentration measure. $m_{K,T,t}$ is gamma mass summed across contracts with strike $K$ and expiry $T$ on day $t$. $H_t$ is near zero when curvature is spread across many strike-expiry pairs and approaches 1 when it is concentrated in one pair. HHI is also used to measure industry concentration.</p></div>
 
 <div class="box data"><span class="k">Sample data</span>
 <div class="io stack">
@@ -535,13 +535,13 @@ open_interest_weighted_gamma   47468616780.585304
 2024-01-04   3.7525e12          0.205136    0.114239       0.028203       -0.119853   0.009816</pre>
 <p class="fnote">Cross-check on 2 January: the largest-node distance 0.022325189461871897 is exactly the moneyness of the 470 strike shown in the previous section, confirming that 470 is the biggest gamma node that day with spot at 459.7363.</p></div>
 </div>
-<p>Whole-sample fact: across the 21 days, total gamma mass ranges from about 2.98 to 4.74 trillion, the near-spot share stays inside 0.191 to 0.316, and the concentration index stays inside 0.0059 to 0.0293 &mdash; that is, curvature is always spread over the equivalent of dozens of strike-expiry pairs, never concentrated in one.</p></div>
+<p>Across the 21 days, total gamma mass ranges from about 2.98 to 4.74 trillion. The near-spot share ranges from 0.191 to 0.316, and the concentration index from 0.0059 to 0.0293. Curvature is spread across the equivalent of dozens of strike-expiry pairs, never concentrated in one.</p></div>
 
 <div class="box why"><span class="k">Why every factor except the first is a ratio</span>
-<p>Total gamma mass grows mechanically with the price level, because of the $S_t^2$ term, and with the size of the option market. The five ratios divide that out, so they describe <em>shape</em> rather than <em>size</em>. That matters when the sample is short: a level factor over one month is close to a slow trend, and a rank correlation against another trending series will pick up the trend rather than the relationship.</p></div>
+<p>Total gamma mass rises mechanically with the price level through $S_t^2$ and with the size of the option market. The five ratios remove those scale effects, so they describe <em>shape</em> rather than <em>size</em>. In a one-month sample, a level factor can behave like a slow trend, making its rank correlation with another trending series misleading.</p></div>
 
 <div class="box warn"><span class="k">Trap</span>
-<p>"Front expiry" on this data means "expires today". SPY lists same-day expiries, the cleaner only drops contracts whose expiry is <em>before</em> the trade date, so the nearest expiry on day $t$ is almost always day $t$ itself. I checked this numerically: the front-expiry share equals the share of gamma mass in same-day expiries on every day of the sample, and averages 0.152. Those contracts stop existing at the day-$t$ close, so about fifteen percent of the day-$t$ gamma picture cannot influence day $t+1$ by construction.</p></div>
+<p>Here, "front expiry" means "expires today". SPY lists same-day expiries, and the cleaner drops only contracts whose expiry is <em>before</em> the trade date. The nearest expiry on day $t$ is therefore almost always day $t$. The front-expiry share equals the share of mass in same-day expiries on every sample day and averages 0.152. Those contracts end at the day-$t$ close, so about fifteen percent of the day-$t$ gamma picture cannot affect day $t+1$.</p></div>
 
 <h2 id="intraday"><span class="sec-no">08</span>Stage 4: the seven daily response metrics &mdash; <code>metrics.py</code></h2>
 
@@ -567,22 +567,22 @@ open_interest_weighted_gamma   47468616780.585304
     return daily_metrics.sort(TRADE_DATE_COLUMN)</pre>
 
 <div class="box gist"><span class="k">In plain words</span>
-<p>Turn about eight hundred price bars per day into a handful of numbers that describe how much the market actually moved that day, how much it traded, and how close it finished to yesterday's biggest gamma strikes.</p></div>
+<p>Turn about eight hundred price bars per day into measures of price movement, trading volume, and distance from yesterday's largest gamma strikes.</p></div>
 
 <div class="box def"><span class="k">What it does</span>
-<p><b>Input:</b> minute bars for the whole window. <b>Output:</b> one row per trade date with seven columns. <b>Role:</b> this is the right-hand side of the research question, the thing the gamma factors are tested against.</p></div>
+<p><b>Input:</b> minute bars for the full window. <b>Output:</b> one row per trade date with seven columns. <b>Role:</b> this is the response side of the research question: the outcomes tested against the gamma factors.</p></div>
 
 <div class="box def"><span class="k">The formula &mdash; realized variance</span>
 <p>$$RV_t=\sum_{k=2}^{n_t}\big(\ln C_{t,k}-\ln C_{t,k-1}\big)^{2}$$</p>
-<p class="fnote">$C_{t,k}$ is the closing price of the $k$-th minute bar on day $t$, and $n_t$ is how many bars that day has. The sum starts at $k=2$ because the first bar of a day has no predecessor inside that day. This is the standard realized-variance estimator: add up squared minute-by-minute log returns. It is <b>not annualized</b>, so a value like $4.3\times10^{-5}$ is a daily variance, and its square root $6.6\times10^{-3}$ is a daily standard deviation of about 0.66 percent.</p></div>
+<p class="fnote">$C_{t,k}$ is the closing price of minute bar $k$ on day $t$, and $n_t$ is the number of bars that day. The sum starts at $k=2$ because the first bar has no earlier bar on that day. This standard realized-variance estimator adds squared minute-by-minute log returns. It is <b>not annualized</b>: $4.3\times10^{-5}$ is daily variance, whose square root, $6.6\times10^{-3}$, is daily standard deviation of about 0.66 percent.</p></div>
 
 <div class="box def"><span class="k">The formula &mdash; abnormal volume score</span>
 <p>$$A_t=\frac{V_t}{\hat V_t},\qquad \hat V_t=\sum_{u}\ \frac{1}{w}\sum_{j=1}^{w} v_{t-j,\,u}$$</p>
-<p class="fnote">$V_t$ is total traded volume on day $t$. $u$ indexes minute-of-day buckets (09:31, 09:32, and so on). $v_{s,u}$ is the volume traded in bucket $u$ on day $s$. $w$ is <code>abnormal_volume_window</code>, 20 trade dates. So the expected volume $\hat V_t$ is built minute by minute from the previous $w$ days only, and $A_t$ above 1 means the day traded more than its own recent norm. Days with no prior history get $A_t=0$ by explicit contract.</p></div>
+<p class="fnote">$V_t$ is total volume on day $t$. $u$ identifies a minute-of-day bucket, such as 09:31. $v_{s,u}$ is the volume in bucket $u$ on day $s$. $w$ is <code>abnormal_volume_window</code>, set to 20 trade dates. Expected volume $\hat V_t$ is therefore built minute by minute from the previous $w$ days. $A_t$ above 1 means the day traded more than its recent norm. Days without history get $A_t=0$ by contract.</p></div>
 
 <div class="box def"><span class="k">The formula &mdash; pinning distance</span>
 <p>$$\Pi_{t+1}=\min_{K\in\mathcal{K}_t}\ \frac{\big|C_{t+1}-K\big|}{C_{t+1}}$$</p>
-<p class="fnote">$\mathcal{K}_t$ is the set of the five strikes with the most gamma mass on day $t$ (<code>pinning_candidate_count</code>). $C_{t+1}$ is the closing price on the next trade date. $\Pi_{t+1}$ is how close the market finished to the nearest of yesterday's big gamma strikes, as a fraction of the price. A small value is what "pinning" would look like. Dividing by $C_{t+1}$ makes the number comparable across price levels.</p></div>
+<p class="fnote">$\mathcal{K}_t$ is the set of five strikes with the most gamma mass on day $t$ (<code>pinning_candidate_count</code>). $C_{t+1}$ is the next trade date's closing price. $\Pi_{t+1}$ measures the distance from that close to the nearest large gamma strike, as a fraction of price. A small value is consistent with "pinning". Dividing by $C_{t+1}$ makes the measure comparable across price levels.</p></div>
 
 <div class="box data"><span class="k">Sample data</span>
 <div class="io stack">
@@ -594,17 +594,17 @@ open_interest_weighted_gamma   47468616780.585304
 2024-01-05   0.000073186        0.003405844    455.7957     66239422      0.008554870   0.001389611     0.914112      0.009224089</pre>
 <p class="fnote">Checking the pinning distance for 3 January by hand: the five biggest gamma strikes on 2 January are 470, 471, 475, 460 and 480. The closest to the 3 January close of 456.6714 is 460, so the distance is $|456.6714-460|/456.6714 = 3.3286/456.6714 = 0.0072888$, which matches the table.</p></div>
 </div>
-<p>Whole-sample fact: 21 rows, one per trade date. The first row carries a not-a-number close-to-close return and pinning distance because there is no earlier day, and an abnormal-volume score of exactly zero for the same reason.</p></div>
+<p>There are 21 rows, one per trade date. The first row has a not-a-number close-to-close return and pinning distance because there is no earlier day. Its abnormal-volume score is also zero because there is no prior volume history.</p></div>
 
 <div class="box why"><span class="k">Why the volume baseline is built minute by minute</span>
-<p>Intraday volume has a strong U-shape: the open and the close trade far more than the middle of the day. If a day is missing its last hour of bars, its total volume drops sharply for a reason that has nothing to do with market interest. Comparing 10:31 against past 10:31s and then adding those expectations up removes that shape from the comparison. The rolling mean is shifted forward one day inside each minute bucket, so day $t$ never sees its own volume.</p></div>
+<p>Intraday volume is usually highest at the open and close and lower in the middle of the day. A day missing its last hour of bars would therefore have lower total volume for a data reason, not a market reason. Comparing each minute with earlier observations for that same minute removes this daily pattern. The rolling mean is shifted one day inside each minute bucket, so day $t$ never uses its own volume.</p></div>
 
 <div class="box warn"><span class="k">Trap</span>
-<p>The rolling mean uses <code>min_samples=1</code>, so on day two of the sample the "20-day baseline" is a single prior day. On this 21-day dataset the window never actually fills. Every abnormal-volume score in the shipped outputs is therefore computed against a shorter and noisier baseline than the setting suggests.</p></div>
+<p><code>min_samples=1</code> lets the rolling mean start with one observation. On day two, the "20-day baseline" is therefore just one prior day. The window never fills in this 21-day dataset, so every shipped abnormal-volume score uses a shorter and noisier baseline than the setting suggests.</p></div>
 
 <div class="box flag"><span class="k">The weakness, stated honestly</span>
-<p>Realized variance is summed over all the bars in the file, which run 04:00 to 19:59 New York time, not the 09:30 to 16:00 regular session. Pre-market minutes are thin, and a squared return from a stale pre-market print enters the sum with the same weight as a real one. The same applies to <code>open_to_close_abs_return</code>, whose "open" is the 04:00 bar. There is no session filter in the code and no configuration option for one.</p>
-<p>I recomputed realized variance over the 09:30 to 16:00 session only and compared. The extended-hours number is larger every day, with a median ratio of 1.57 and a mean of 2.30. The two series are far from interchangeable: their rank correlation across the 21 days is 0.61, and on 2 January the extended-hours figure is <b>9.6 times</b> the regular-session one. So the headline target is not the realized variance a data vendor would quote, and the choice of session materially changes which days count as the volatile ones.</p></div>
+<p>Realized variance uses every bar from 04:00 to 19:59 New York time, not only the 09:30 to 16:00 regular session. Thin pre-market returns therefore enter the sum with the same weight as regular-session returns. <code>open_to_close_abs_return</code> also uses the 04:00 bar as its open. The code has no session filter or setting for one.</p>
+<p>Using only 09:30 to 16:00 makes realized variance smaller every day: the median ratio is 1.57 and the mean is 2.30. The two series have rank correlation 0.61 across 21 days, and on 2 January the extended-hours value is <b>9.6 times</b> the regular-session value. The headline target therefore differs from a vendor's regular-session measure, and the session choice changes which days appear most volatile.</p></div>
 
 <h2 id="align"><span class="sec-no">09</span>Stage 5: pairing day <em>t</em> with day <em>t+1</em> &mdash; <code>dataset.py</code></h2>
 
@@ -634,10 +634,10 @@ def _build_exposure_calendar(exposures: pl.DataFrame) -&gt; pl.DataFrame:
     )</pre>
 
 <div class="box gist"><span class="k">In plain words</span>
-<p>For each day, look up what the option surface looked like at that day's close, then attach what the market did on the following trading day. Keep the date of that following day in the table so anyone can check the pairing by eye.</p></div>
+<p>For each day, record the option surface at the close and attach the market's results from the next trading day. Keep that response date in the table so the pairing is easy to check.</p></div>
 
 <div class="box def"><span class="k">What it does</span>
-<p><b>Input:</b> the daily factor frame and the daily response frame, each keyed by trade date. <b>Output:</b> one row per exposure date that has a following exposure date, carrying the six factors, the matched <code>response_trade_date</code>, and seven response columns renamed with a <code>next_day_</code> prefix. <b>Role:</b> the only place in the project where a day-<em>t</em> variable meets a day-<em>t+1</em> variable. Every research module downstream reads this one table.</p></div>
+<p><b>Input:</b> daily factor and response tables keyed by trade date. <b>Output:</b> one row per exposure date with a following exposure date, containing six factors, the matched <code>response_trade_date</code>, and seven response columns with a <code>next_day_</code> prefix. <b>Role:</b> the only place where a day-<em>t</em> variable meets a day-<em>t+1</em> variable. Every downstream research module reads this table.</p></div>
 
 <div class="box data"><span class="k">Sample data</span>
 <div class="io stack">
@@ -649,17 +649,17 @@ def _build_exposure_calendar(exposures: pl.DataFrame) -&gt; pl.DataFrame:
 2024-01-05   3.7669e12         0.215660         2024-01-08           0.000037                    0.868581</pre>
 <p class="fnote">Notice the fourth row: 5 January is a Friday, so the matched response date is Monday 8 January. The join follows the observed calendar, not the calendar date plus one.</p></div>
 </div>
-<p>Whole-sample fact: 21 exposure dates in, 20 rows out. The last exposure date, 31 January, is dropped because nothing follows it. The first response date, 2 January, is never used as a response for the same reason in reverse &mdash; which is convenient, because that is exactly the row whose abnormal-volume score is the placeholder zero.</p></div>
+<p>There are 21 exposure dates and 20 output rows. The last exposure date, 31 January, is dropped because no date follows it. The first response date, 2 January, is not used because no exposure date precedes it. That also removes the row whose abnormal-volume score is the placeholder zero.</p></div>
 
 <div class="box why"><span class="k">Why the match is "next observed exposure date" and not "next calendar day"</span>
-<p>Adding one day to a Friday gives a Saturday, which has no data, and a naive join would then silently drop every Friday from the sample. Shifting the exposure calendar by one position instead means the next row is whatever the next trading day actually was. The extra strictness is that the matched date must be the next <em>exposure</em> date: if the option file has a day the bar file does not, the pair is dropped rather than quietly reaching two days forward.</p></div>
+<p>Adding one day to Friday gives Saturday, which has no data. A calendar-date join would therefore drop every Friday. Shifting the exposure table by one row uses the next observed trading day instead. The matched date must also be the next <em>exposure</em> date. If the option file has a date missing from the bar file, the pair is dropped instead of reaching two days forward.</p></div>
 
-<div class="box why"><span class="k">Where look-ahead is prevented</span>
-<p>Three separate places. First, here: the response is strictly the following day, and <code>response_trade_date</code> is kept in the output so the claim is auditable. Second, in the abnormal-volume baseline, where the rolling mean is shifted one day forward inside each minute bucket. Third, in the walk-forward forecasts, where the model for row $j$ is fitted on <code>slice(0, j)</code> and predicts row $j$. I checked all three against the actual data and they hold.</p></div>
+<div class="box why"><span class="k">Where future data is excluded</span>
+<p>Future data is excluded in three places. First, the response is strictly the following day, and <code>response_trade_date</code> remains in the output for checking. Second, the abnormal-volume baseline shifts its rolling mean one day inside each minute bucket. Third, each walk-forward model for row $j$ trains on <code>slice(0, j)</code> and predicts row $j$. All three match the data.</p></div>
 
 <h2 id="research"><span class="sec-no">10</span>Stage 6: the research modules</h2>
 
-<p>Six modules read the aligned table. None of them knows anything about options or price bars; they all take a factor column name and a target column name.</p>
+<p>Six modules read the aligned table. They do not know about options or price bars; each receives a factor column name and a target column name.</p>
 
 <h3><code>descriptive.build_quantile_summary</code> &mdash; sort into buckets, average the target</h3>
 
@@ -679,7 +679,7 @@ def _build_exposure_calendar(exposures: pl.DataFrame) -&gt; pl.DataFrame:
 <p class="fnote">$j$ is the row's position after sorting by the factor, $n$ is the number of rows, $q$ is <code>quantile_count</code>. The floor brackets mean "round down to a whole number". With $n=20$ and $q=5$ this gives five buckets of exactly four rows.</p></div>
 
 <div class="box why"><span class="k">Why rank position rather than percentile cut points</span>
-<p>Percentile-based bucketing has to decide what to do when many rows share a value, and different libraries decide differently, which makes bucket sizes wobble. Slicing the sorted list by position always produces bucket sizes that differ by at most one, which is what the bootstrap needs to be comparable across resamples. The price is that the bucket edges are not round numbers of the factor.</p></div>
+<p>Percentile cut points must handle tied values, and libraries handle ties differently. That can change bucket sizes. Slicing the sorted rows by position keeps bucket sizes within one row of each other, which makes bootstrap results comparable. The trade-off is that bucket edges are not round factor values.</p></div>
 
 <div class="box data"><span class="k">Sample data</span>
 <div class="io stack">
@@ -697,13 +697,13 @@ def _build_exposure_calendar(exposures: pl.DataFrame) -&gt; pl.DataFrame:
 
 <div class="box def"><span class="k">The formula</span>
 <p>$$\big[\hat\mu^{(\alpha/2)}_{b},\ \hat\mu^{(1-\alpha/2)}_{b}\big],\qquad \alpha=1-c$$</p>
-<p class="fnote">$c$ is <code>bootstrap_confidence_level</code>, 0.95, so $\alpha=0.05$. The procedure draws $n$ whole rows with replacement from the aligned table, re-sorts them into buckets, records each bucket's target mean, and repeats 1,000 times. $\hat\mu^{(p)}_{b}$ is the $p$-th percentile of the recorded means for bucket $b$. Rows are resampled whole, not column by column, so the pairing between factor and target is never broken.</p></div>
+<p class="fnote">$c$ is <code>bootstrap_confidence_level</code>, 0.95, so $\alpha=0.05$. The procedure draws $n$ complete rows with replacement, sorts them into buckets, records each bucket's target mean, and repeats 1,000 times. $\hat\mu^{(p)}_{b}$ is the $p$-th percentile of the recorded means for bucket $b$. Resampling complete rows preserves the factor-target pairing.</p></div>
 
 <div class="box why"><span class="k">Why the confidence bands are the same on every run</span>
-<p>The generator is seeded: <code>random_seed: int = 42</code> is a default argument of <code>build_quantile_summary_with_ci()</code>, and nothing in the pipeline overrides it. That is why re-running the pipeline reproduces <code>ci_lower</code> and <code>ci_upper</code> to the last decimal, which is how the bands in the box above were checked. The seed is the one tunable value that lives in the source rather than in <code>config.toml</code>; changing it would move every published interval slightly, which is a good reason to leave it pinned.</p></div>
+<p>The generator uses a fixed seed: <code>random_seed: int = 42</code> is the default argument of <code>build_quantile_summary_with_ci()</code>, and the pipeline does not override it. Re-running the pipeline therefore reproduces <code>ci_lower</code> and <code>ci_upper</code> to the last decimal. The seed is the only tunable value stored in source code instead of <code>config.toml</code>; changing it would move every interval slightly.</p></div>
 
 <div class="box flag"><span class="k">The weakness, stated honestly</span>
-<p>The resample treats the 20 days as independent draws. Realized variance is strongly autocorrelated &mdash; a volatile day is usually followed by another one &mdash; so an independent-row bootstrap understates how uncertain these means really are. A block bootstrap, which resamples runs of consecutive days, would give wider and more honest bands. The bands shown above are therefore the optimistic version, and they already overlap completely.</p></div>
+<p>The resample treats the 20 days as independent. Realized variance is strongly autocorrelated, meaning a volatile day is often followed by another volatile day. An independent-row bootstrap therefore understates uncertainty. A block bootstrap, which resamples consecutive runs of days, would produce wider bands. The bands above are the optimistic version, and they already overlap completely.</p></div>
 
 <h3><code>statistical_tests.build_statistical_test_summary</code> &mdash; two formal tests</h3>
 
@@ -712,7 +712,7 @@ def _build_exposure_calendar(exposures: pl.DataFrame) -&gt; pl.DataFrame:
 <p>$$\rho=\mathrm{corr}\big(\mathrm{rank}(x),\ \mathrm{rank}(y)\big)$$</p>
 <p>Kruskal-Wallis statistic:</p>
 <p>$$H=\frac{12}{n(n+1)}\sum_{g=1}^{q}\frac{R_g^{2}}{n_g}-3(n+1)$$</p>
-<p class="fnote">For Spearman, $x$ is the factor and $y$ the target, and $\mathrm{rank}$ replaces each value by its position in the sorted order, so the measure detects any consistently increasing or decreasing relationship rather than only a straight-line one. $\rho$ runs from $-1$ to $+1$. For Kruskal-Wallis, $n$ is the total sample size, $q$ the number of buckets, $n_g$ the size of bucket $g$, and $R_g$ the sum of the overall ranks of the target values falling in bucket $g$. $H$ is large when the buckets sit at different places in the overall ranking. Both are computed by SciPy; the formulas above are what SciPy implements.</p></div>
+<p class="fnote">For Spearman, $x$ is the factor and $y$ the target. $\mathrm{rank}$ replaces each value with its sorted position, so the measure detects a consistent increase or decrease, not only a straight-line relationship. $\rho$ ranges from $-1$ to $+1$. For Kruskal-Wallis, $n$ is total sample size, $q$ is the number of buckets, $n_g$ is the size of bucket $g$, and $R_g$ is the sum of the overall ranks of target values in bucket $g$. $H$ is large when buckets occupy different parts of the overall ranking. SciPy computes both tests using these formulas.</p></div>
 
 <div class="box data"><span class="k">Sample data</span>
 <div class="io stack">
@@ -720,7 +720,7 @@ def _build_exposure_calendar(exposures: pl.DataFrame) -&gt; pl.DataFrame:
 <pre>test_name                   test_statistic  p_value    sample_size
 spearman_rank_correlation   0.030075        0.899837   20
 kruskal_wallis              4.785714        0.309999   20</pre>
-<p class="fnote">A p-value is the probability of seeing a statistic at least this extreme if there were genuinely no relationship. At 0.90 and 0.31, neither test finds anything. This is the headline result of the project on the shipped sample.</p></div>
+<p class="fnote">A p-value is the probability of seeing a statistic at least this extreme if there were no relationship. At 0.90 and 0.31, neither test finds evidence of one. This is the headline result for the shipped sample.</p></div>
 </div></div>
 
 <h3><code>regime.build_regime_quantile_summary</code> &mdash; does the answer change in calm versus volatile markets</h3>
@@ -736,18 +736,18 @@ kruskal_wallis              4.785714        0.309999   20</pre>
     )</pre>
 
 <div class="box def"><span class="k">What it does</span>
-<p><b>Input:</b> the aligned table. <b>Output:</b> one row per observed pair of regime label and quantile bucket. <b>Role:</b> a conditioning check &mdash; if gamma structure only matters when the market is already jumpy, the pooled result would hide it.</p></div>
+<p><b>Input:</b> the aligned table. <b>Output:</b> one row for each observed combination of regime label and quantile bucket. <b>Role:</b> a conditioning check. If gamma structure matters only when the market is already volatile, the pooled result could hide it.</p></div>
 
 <div class="box data"><span class="k">Sample data</span>
 <div class="io stack">
 <div><span class="lab">out &mdash; regime_summary.csv</span>
 <pre>volatility_regime,quantile_bucket,target_mean,observation_count
 (no rows)</pre>
-<p class="fnote">Not an error and not a bug. The window needs 20 trailing observations after the one-row shift, and there are only 19 available in a 20-row table, so no day gets classified and the table is legitimately empty.</p></div>
+<p class="fnote">This is expected. The window needs 20 trailing observations after the one-row shift, but a 20-row table has only 19 available for classification. No day is classified, so the table is empty.</p></div>
 </div></div>
 
 <div class="box flag"><span class="k">The weakness, stated honestly</span>
-<p>The calm-versus-volatile threshold is the median of the trailing variance <em>computed over the whole sample</em>. The trailing signal itself is past-only, so a day's label never depends on its own response &mdash; that part of the docstring is accurate. But the cut point does depend on the entire sample, including days that come later. For a descriptive in-sample split that is a common and defensible choice; for anything presented as a real-time classification it would be look-ahead. An expanding median would remove the issue.</p></div>
+<p>The calm-versus-volatile threshold is the median trailing variance <em>computed over the whole sample</em>. Each day's trailing signal uses only earlier observations, but the threshold also uses later days. That is reasonable for a descriptive in-sample split, but it uses future data for a real-time classification. An expanding median would remove the issue.</p></div>
 
 <h3><code>descriptive</code> robustness helpers &mdash; three ways to try to break the result</h3>
 
@@ -770,7 +770,7 @@ near_spot_share_threshold  at_or_above_count  below_count  at_or_above_mean  bel
 
 dropped_month  spearman_rho  p_value  observation_count
 2024-01        NaN           NaN      0</pre>
-<p class="fnote">Three of these four tables are uninformative on the shipped data, and the page says so rather than presenting them as evidence. The two halves have opposite signs and both p-values above 0.6. The near-spot share never reaches 0.4, so two of the three threshold rows split nothing. And with only one calendar month in the sample, leaving that month out leaves zero rows.</p></div>
+<p class="fnote">Three of these four tables are uninformative for the shipped data. The two halves have opposite signs and p-values above 0.6. The near-spot share never reaches 0.4, so two threshold rows split nothing. With only one calendar month, leaving that month out leaves zero rows.</p></div>
 </div></div>
 
 <h3><code>multi_factor</code> &mdash; the correlation matrices</h3>
@@ -784,10 +784,10 @@ near_spot_gamma_mass_share           0.112782                     0.324812
 front_expiry_gamma_mass_share       -0.230075                     0.369925
 call_put_gamma_mass_imbalance       -0.022556                     0.684211   &lt;- see the trap below</pre></div>
 </div>
-<p>Six factors by eight targets, computed with pairwise cleaning: each cell drops only the rows where that particular pair has a null or non-finite value.</p></div>
+<p>These are six factors by eight targets. Each cell drops only rows where its factor-target pair is null or non-finite.</p></div>
 
 <div class="box warn"><span class="k">Trap</span>
-<p>The 0.684 correlation between the call-versus-put imbalance and the next-day <em>close price</em> is not a finding. SPY rose through January 2024, and the call share of gamma mass rose with it &mdash; both series are trending, so their ranks agree. Correlating anything against a price level over a short trending window will do this. The variance and return-size targets are the meaningful ones; <code>next_day_close_price</code> and <code>next_day_total_volume</code> are levels and should be read as diagnostics, not results.</p></div>
+<p>The 0.684 correlation between call-versus-put imbalance and next-day <em>close price</em> is not a finding. SPY rose through January 2024, and the call share of gamma mass rose with it. Their ranks therefore agree. A short, trending sample can produce this result for any price-level comparison. Treat the variance and return-size targets as the meaningful targets; read <code>next_day_close_price</code> and <code>next_day_total_volume</code> as diagnostics.</p></div>
 
 <h3><code>predictive</code> &mdash; walk-forward forecasts</h3>
 
@@ -799,25 +799,25 @@ call_put_gamma_mass_imbalance       -0.022556                     0.684211   &lt
 
 <div class="box def"><span class="k">The formula &mdash; what the ridge model minimises</span>
 <p>$$\hat\beta=\arg\min_{\beta}\ \sum_{s=1}^{j}\big(y_s-\beta_0-\beta_1 x_s\big)^{2}+\lambda\beta_1^{2}$$</p>
-<p class="fnote">$x_s$ is the factor on training row $s$, $y_s$ the target, $j$ the index of the row being predicted, $\beta_0$ the intercept and $\beta_1$ the slope. $\lambda$ is the penalty strength, chosen from <code>ridge_alpha_candidates</code> by cross-validation inside the training window whenever at least two folds fit, and otherwise fixed at the first candidate. The extra $\lambda\beta_1^{2}$ term shrinks the slope toward zero, which is what stops a handful of early observations from producing a wild fit. Plain least squares is the same expression with $\lambda=0$.</p></div>
+<p class="fnote">$x_s$ is the factor on training row $s$, $y_s$ is the target, $j$ is the index of the row being predicted, $\beta_0$ is the intercept, and $\beta_1$ is the slope. $\lambda$ is the penalty strength. Cross-validation chooses it from <code>ridge_alpha_candidates</code> when at least two folds fit; otherwise the first candidate is used. The term $\lambda\beta_1^{2}$ shrinks the slope toward zero and limits unstable fits from small early samples. Ordinary least squares uses the same expression with $\lambda=0$.</p></div>
 
 <div class="box def"><span class="k">The formula &mdash; the two error measures</span>
 <p>$$\mathrm{MAE}=\frac{1}{P}\sum_{p=1}^{P}\big|y_p-\hat y_p\big|,\qquad \mathrm{RMSE}=\sqrt{\frac{1}{P}\sum_{p=1}^{P}\big(y_p-\hat y_p\big)^{2}}$$</p>
-<p class="fnote">$P$ is the number of out-of-sample predictions, $y_p$ the realized target and $\hat y_p$ the forecast. MAE is the mean absolute error, the average size of a miss. RMSE is the root mean squared error, which punishes big misses more heavily. Both are reported in the units of the target, so for realized variance they are also of order $10^{-5}$.</p></div>
+<p class="fnote">$P$ is the number of out-of-sample predictions, $y_p$ is the realized target, and $\hat y_p$ is the forecast. MAE is mean absolute error, the average size of a miss. RMSE is root mean squared error, which gives more weight to large misses. Both use the target's units, so for realized variance they are of order $10^{-5}$.</p></div>
 
 <div class="box data"><span class="k">Sample data</span>
 <div class="io stack">
 <div><span class="lab">out &mdash; predictive_comparison.csv</span>
 <pre>model_name,observation_count,mean_absolute_error,root_mean_squared_error
 (no rows)</pre>
-<p class="fnote">Again legitimately empty rather than broken. <code>predictive_min_train_size</code> is 20 and the aligned table has 20 rows, so <code>range(20, 20)</code> is empty and not a single forecast is made. Lowering the setting to, say, 10 would produce ten forecasts for each of the three models.</p></div>
+<p class="fnote">This is expected. <code>predictive_min_train_size</code> is 20 and the aligned table has 20 rows, so <code>range(20, 20)</code> is empty and no forecast is made. Setting it to 10 would produce ten forecasts for each of the three models.</p></div>
 </div></div>
 
 <div class="box why"><span class="k">Why there is a naive baseline at all</span>
-<p>The third model simply predicts that tomorrow's realized variance equals the value from the previous row. Volatility is persistent, so this baseline is genuinely hard to beat, and a model that cannot beat it has demonstrated nothing regardless of how good its error numbers look on their own. All three models are scored on exactly the same prediction dates so the comparison is fair.</p></div>
+<p>The third model predicts that tomorrow's realized variance will equal the previous row's value. Volatility is persistent, so this is a meaningful baseline. A model that cannot beat it has shown little, even if its standalone error looks good. All three models use the same prediction dates.</p></div>
 
 <div class="box warn"><span class="k">Trap</span>
-<p>When the training window is too short to cross-validate, the fallback penalty is <code>alpha_candidates[0]</code>, which with the configured list is 0.01 &mdash; the <em>weakest</em> penalty. That is exactly backwards from what regularisation is for: the smallest training windows are the ones that most need shrinkage. It only bites in the first few walk-forward steps, and on the default configuration it never runs at all, but it is worth knowing before changing <code>predictive_min_train_size</code>.</p></div>
+<p>When the training window is too short for cross-validation, the fallback penalty is <code>alpha_candidates[0]</code>, which is 0.01 with the configured list. That is the <em>weakest</em> penalty, even though the smallest samples need the most shrinkage. This affects only the first walk-forward steps and never runs under the default configuration, but it matters if <code>predictive_min_train_size</code> changes.</p></div>
 
 <h2 id="artifacts"><span class="sec-no">11</span>Stage 7: what gets written to disk</h2>
 
@@ -839,7 +839,7 @@ call_put_gamma_mass_imbalance       -0.022556                     0.684211   &lt
     return paths</pre>
 
 <div class="box def"><span class="k">What it does</span>
-<p><b>Input:</b> a dictionary of fifteen named frames. <b>Output:</b> fourteen CSV files, one Parquet file, and <code>run_manifest.json</code>. <b>Role:</b> the deliverable. Everything is plain text except the aligned dataset, which keeps Parquet so that date types survive a round trip.</p></div>
+<p><b>Input:</b> a dictionary of fifteen named tables. <b>Output:</b> fourteen CSV files, one Parquet file, and <code>run_manifest.json</code>. <b>Role:</b> writes the results. Everything is plain text except the aligned dataset, which stays in Parquet so date types survive a round trip.</p></div>
 
 <div class="box data"><span class="k">Sample data</span>
 <div class="io stack">
@@ -852,12 +852,12 @@ quantile_summary                 5      factor_target_correlations       6
 statistical_tests                2      factor_factor_correlations       6
 regime_summary                   0      expanding_window_diagnostics     0
 predictive_comparison            0</pre>
-<p class="fnote">The manifest also records the symbol, the date range, the chosen factor and target names, and the raw directory, so a run is self-describing.</p></div>
+<p class="fnote">The manifest also records the symbol, date range, factor and target names, and raw directory. Each run can therefore be identified from its own manifest.</p></div>
 </div></div>
 
 <h2 id="refresh"><span class="sec-no">12</span>The optional ClickHouse refresh path</h2>
 
-<p>Four modules exist only to rebuild <code>data/raw/</code>. They are never imported by the analysis path.</p>
+<p>Four modules exist only to rebuild <code>data/raw/</code>; the analysis path never imports them.</p>
 
 <pre>    return textwrap.dedent(
         """
@@ -871,13 +871,13 @@ predictive_comparison            0</pre>
     ).strip()</pre>
 
 <div class="box why"><span class="k">Why the queries use placeholders</span>
-<p><code>{symbol:String}</code> is a ClickHouse bound parameter, not a Python format field. The value is sent separately from the query text, so a symbol containing SQL punctuation cannot change what the query does. Building the same string with an f-string would be an injection hole.</p></div>
+<p><code>{symbol:String}</code> is a ClickHouse bound parameter, not a Python format field. The value is sent separately from the query text, so punctuation in a symbol cannot change the query. Building the query with an f-string would create a SQL injection risk.</p></div>
 
 <div class="box def"><span class="k">What the refresh writes</span>
-<p><b>Input:</b> symbol and a date range. <b>Output:</b> two Parquet files plus <code>manifest.json</code> recording schema version, row counts, file sizes and column lists. <b>Role:</b> maintenance only. The committed manifest records 16,689 bar rows and 168,762 option rows for 2 to 31 January 2024, which matches what the loaders read today.</p></div>
+<p><b>Input:</b> a symbol and date range. <b>Output:</b> two Parquet files plus <code>manifest.json</code> with the schema version, row counts, file sizes, and column lists. <b>Role:</b> maintenance only. The committed manifest records 16,689 bar rows and 168,762 option rows from 2 to 31 January 2024, matching what the loaders read today.</p></div>
 
 <div class="box flag"><span class="k">Not verified here</span>
-<p>I could not run this path: it needs a live ClickHouse server and credentials in <code>.env</code>. The repository's own smoke test for it is skipped unless <code>RUN_CLICKHOUSE_SMOKE_TESTS=1</code> is set. Everything said about it above comes from reading the code and the committed manifest, not from executing it.</p></div>
+<p>This path needs a live ClickHouse server and credentials in <code>.env</code>, so it was not run here. The repository's smoke test is skipped unless <code>RUN_CLICKHOUSE_SMOKE_TESTS=1</code> is set. The description above comes from the code and committed manifest, not an execution.</p></div>
 
 <h2 id="fixes"><span class="sec-no">13</span>Fixes applied</h2>
 
@@ -885,48 +885,48 @@ predictive_comparison            0</pre>
 <p>In <code>intraday/metrics.py</code>, <code>_build_minute_bars()</code> computed the minute-of-day bucket as:</p>
 <pre>(pl.col(TIMESTAMP_COLUMN).dt.hour() * 60 + pl.col(TIMESTAMP_COLUMN).dt.minute())
 .cast(pl.Int32)</pre>
-<p>Polars returns <b>Int8</b> for both <code>dt.hour()</code> and <code>dt.minute()</code>, and Int8 arithmetic wraps around at 127. The multiplication happened before the cast, so <code>hour * 60</code> overflowed for every hour from 3 onward. The result was not a minute of the day at all: 04:00 became &minus;16, 09:00 became 28, 15:30 became &minus;94, 19:30 became &minus;110. Worse, unrelated clock minutes collided into the same bucket &mdash; 04:44 and 09:00 both mapped to 28. The 960 real minute buckets in the file collapsed into 256.</p>
-<p>The fix casts each part to Int32 before the arithmetic, adds a named constant for the 60, and explains the reason in a comment:</p>
+<p>Polars returns <b>Int8</b> for both <code>dt.hour()</code> and <code>dt.minute()</code>. Int8 arithmetic wraps at 127. Because multiplication happened before the cast, <code>hour * 60</code> overflowed from hour 3 onward. The result was not a valid minute-of-day value: 04:00 became &minus;16, 09:00 became 28, 15:30 became &minus;94, and 19:30 became &minus;110. Different clock minutes also collided: 04:44 and 09:00 both mapped to 28. The 960 real minute buckets collapsed into 256.</p>
+<p>The fix casts both parts to Int32 before arithmetic, names the 60-minute constant, and explains why in a comment:</p>
 <pre>(
     pl.col(TIMESTAMP_COLUMN).dt.hour().cast(pl.Int32) * MINUTES_PER_HOUR
     + pl.col(TIMESTAMP_COLUMN).dt.minute().cast(pl.Int32)
 ).alias(MINUTE_OF_DAY_COLUMN)</pre>
-<p><b>Blast radius:</b> <code>minute_of_day</code> is used in exactly one place, the abnormal-volume baseline. Because the sum of trailing means is linear, merging buckets mostly cancels out when every day has the same set of minutes, so the numerical change on this dataset is small: the largest change to any <code>abnormal_volume_score</code> is 0.0049, on 3 January, which moved from 0.913192 to 0.918058. The column was still wrong in principle, would drift further on data with more missing bars, and would have been badly wrong for anyone plotting an intraday volume profile from that column.</p>
-<p><b>Verification:</b> after the fix, <code>minute_of_day</code> has 960 distinct values running 240 to 1199 (04:00 to 19:59), which is exactly right. A regression test was added at <code>tests/intraday/test_metrics.py::test_build_minute_bars_keeps_afternoon_minutes_distinct</code>, asserting that 04:44, 09:00, 15:30 and 19:59 map to 284, 540, 930 and 1199.</p></div>
+<p><b>Blast radius:</b> <code>minute_of_day</code> is used only by the abnormal-volume baseline. Since the trailing means are summed, merged buckets mostly cancel when every day has the same minutes. The largest change to <code>abnormal_volume_score</code> is therefore 0.0049, on 3 January, from 0.913192 to 0.918058. The column was still wrong and would be more wrong with missing bars or in an intraday volume plot.</p>
+<p><b>Verification:</b> after the fix, <code>minute_of_day</code> has 960 distinct values from 240 to 1199 (04:00 to 19:59). A regression test at <code>tests/intraday/test_metrics.py::test_build_minute_bars_keeps_afternoon_minutes_distinct</code> checks that 04:44, 09:00, 15:30, and 19:59 map to 284, 540, 930, and 1199.</p></div>
 
 <div class="box warn"><span class="k">Bug found and fixed: unusable rows were being filed into a real bucket</span>
-<p><code>build_quantile_summary()</code> in <code>descriptive.py</code> was the only public research helper with no cleaning pass. Its four siblings &mdash; <code>statistical_tests</code>, <code>multi_factor</code>, <code>_build_spearman_summary_row</code> and the predictive helpers &mdash; all begin by dropping rows where either column is null or non-finite. This one sorted the raw frame straight into buckets.</p>
-<p>Polars sorts nulls <em>first</em> and NaN <em>last</em>. Because buckets are assigned by rank position, that put every row with a missing factor into bucket 0 &mdash; the "lowest gamma exposure" bucket &mdash; and every NaN-factor row into the top bucket. The bucket mean then reported those rows as though they were real readings. Three concrete symptoms, each reproduced on a small frame:</p>
+<p><code>build_quantile_summary()</code> in <code>descriptive.py</code> was the only public research helper without a cleaning pass. Its four siblings &mdash; <code>statistical_tests</code>, <code>multi_factor</code>, <code>_build_spearman_summary_row</code>, and the predictive helpers &mdash; first drop rows where either column is null or non-finite. This function sorted the raw table directly into buckets.</p>
+<p>Polars sorts nulls <em>first</em> and NaN <em>last</em>. Because buckets use rank position, missing factors went into bucket 0, the "lowest gamma exposure" bucket, and NaN factors went into the top bucket. Their means were then reported as real readings. Three symptoms appeared on a small test table:</p>
 <ul>
 <li><b>A phantom bucket.</b> Two rows with a null factor and a target of 50.0 produced <code>bucket 0, target_mean 50.0, observation_count 2</code>. The lowest-exposure bucket was pure missingness.</li>
 <li><b>A count that did not match its own mean.</b> <code>observation_count</code> uses <code>pl.len()</code>, which counts every row in the bucket, while <code>.mean()</code> skips nulls. A bucket reported <code>observation_count = 2</code> beside <code>target_mean = null</code> &mdash; two observations behind a mean that no row contributed to.</li>
 <li><b>Two report tables disagreeing.</b> On the same eight-row input, <code>statistical_tests.csv</code> reported <code>sample_size 6</code> while <code>quantile_summary.csv</code> accounted for all eight rows.</li>
 </ul>
-<p>Worse, the null mean crashed the bootstrap. <code>bootstrap.py</code> wraps each resampled bucket mean in <code>float(...)</code> with a not-a-number default, but the default only covers a <em>missing</em> key, not a key holding <code>None</code>:</p>
+<p>The null mean also crashed the bootstrap. <code>bootstrap.py</code> wraps each resampled bucket mean in <code>float(...)</code> with a not-a-number default, but that default covers a <em>missing</em> key, not a key containing <code>None</code>:</p>
 <pre>float(resampled_means_by_bucket.get(bucket_label, float("nan")))
 <span class="c"># TypeError: float() argument must be a string or a real number, not 'NoneType'</span></pre>
-<p>The fix applies the same pairwise cleaning the siblings use, before sorting:</p>
+<p>The fix applies the same pairwise cleaning before sorting:</p>
 <pre>clean_frame = frame.drop_nulls([factor_name, target_name]).filter(
     pl.col(factor_name).is_finite(),
     pl.col(target_name).is_finite(),
 )</pre>
-<p><b>Blast radius:</b> none on the shipped demo run. The alignment step drops the only day carrying missing values, so the 20-row research dataset has no nulls and no NaN in any column. I confirmed the fix leaves every output table numerically identical. The bug was latent, waiting for a longer or gappier sample &mdash; where it would have shown up first as a hard crash, and second as a fabricated bottom bucket.</p>
-<p><b>Verification:</b> two regression tests were added to <code>tests/research/test_descriptive.py</code>, one asserting that null and NaN rows never reach a bucket, one asserting that <code>observation_count</code> matches the rows behind <code>target_mean</code>. The suite goes from 74 tests at the start of this review to 77 passing, 1 skipped.</p></div>
+<p><b>Blast radius:</b> none on the shipped demo run. The alignment step removes the only day with missing values, so the 20-row research dataset has no nulls or NaN. Every output table remains numerically identical. The bug would have appeared on a longer or less complete sample as a crash and then as a false bottom bucket.</p>
+<p><b>Verification:</b> two regression tests were added to <code>tests/research/test_descriptive.py</code>: one checks that null and NaN rows never enter a bucket; the other checks that <code>observation_count</code> matches the rows behind <code>target_mean</code>. The suite now has 77 passing tests and 1 skipped.</p></div>
 
 <div class="box flag"><span class="k">Two more genuine defects, found but deliberately left alone</span>
-<p>I am flagging these rather than fixing them, because fixing either one means deciding what the author intended, and both sit outside the path that produces the shipped tables.</p>
-<p><b>1. <code>build_prediction_intervals()</code> in <code>predictive.py</code> looks ahead.</b> It builds the residual pool from the entire evaluation window and then draws from that same pool for every row, so the interval on the first out-of-sample day is informed by the error made on the last day. The module docstring says these helpers "are intentionally walk-forward and trade-date sorted so they remain safe for time-series evaluation"; this one function is not. On a test series whose residuals are small for twenty days and then large for twenty days, the first row's interval came out roughly 800 times wider than an expanding-window interval would be. The function is exported and tested but never called by <code>offline_pipeline.py</code>, so no shipped table is affected. A correct version would grow the residual pool one row at a time.</p>
-<p><b>2. <code>load_settings(project_root=...)</code> does not relocate the config or the environment file.</b> The three path arguments are independent, so passing only <code>project_root</code> gives you an <code>AppSettings</code> whose <code>outputs_dir</code> points at the new root while every configured <em>value</em> still comes from the real repository &mdash; and it silently reads the developer's real <code>.env</code>. Every existing test passes all three paths together, so nothing exercises it. Deriving the two file paths from the resolved root when they are not given explicitly would close it.</p></div>
+<p>These are flagged rather than fixed because each fix requires an intent decision, and neither affects the shipped tables.</p>
+<p><b>1. <code>build_prediction_intervals()</code> in <code>predictive.py</code> looks ahead.</b> It builds one residual pool from the entire evaluation window and uses it for every row. The first out-of-sample interval is therefore informed by the last day's error. The module docstring says these helpers are walk-forward and date-sorted for time-series evaluation, but this function is not. On a test series with small residuals for twenty days followed by large residuals for twenty days, the first interval was roughly 800 times wider than an expanding-window interval. The exported and tested function is never called by <code>offline_pipeline.py</code>, so no shipped table is affected. A correct version would grow the residual pool one row at a time.</p>
+<p><b>2. <code>load_settings(project_root=...)</code> does not relocate the config or environment file.</b> The three path arguments are independent. Passing only <code>project_root</code> changes <code>outputs_dir</code>, but other settings still come from the real repository and the developer's real <code>.env</code>. Existing tests pass all three paths together, so they do not cover this case. Deriving the two file paths from the resolved root when omitted would fix it.</p></div>
 
 <div class="box flag"><span class="k">The pipeline is not bit-for-bit reproducible</span>
-<p>Running <code>gex run-offline-analysis</code> twice on identical code and identical input does not produce identical CSV files. Polars sums grouped floating-point columns across threads, and the order of that reduction varies between runs, so the last one or two digits move. I measured the drift at about $4\times10^{-14}$ relative on <code>gamma_factors.csv</code> and $1\times10^{-15}$ on <code>intraday_metrics.csv</code>.</p>
-<p>This is far below anything the analysis depends on, and every figure quoted on this page is rounded well inside it. It is worth knowing anyway: comparing two runs with <code>cmp</code> or a checksum will report a difference that is not a change, so any regression check on these outputs has to compare with a numerical tolerance rather than byte-for-byte.</p></div>
+<p>Running <code>gex run-offline-analysis</code> twice with the same code and input does not produce byte-identical CSV files. Polars sums grouped floating-point columns across threads, and the reduction order varies, moving the last one or two digits. The measured drift is about $4\times10^{-14}$ relative in <code>gamma_factors.csv</code> and $1\times10^{-15}$ in <code>intraday_metrics.csv</code>.</p>
+<p>The drift is far below the analysis precision, and every figure here is rounded beyond it. A byte comparison or checksum will still report a difference, so regression checks must use a numerical tolerance.</p></div>
 
 <div class="box def"><span class="k">Also worth knowing</span>
-<p>The committed output tables under <code>outputs/</code> and <code>blog/data/</code> were generated before this fix, so their <code>abnormal_volume_score</code> column carries the old values. They were left alone deliberately, since regenerating them is a separate decision. Rerunning <code>gex run-offline-analysis</code> reproduces the corrected numbers.</p></div>
+<p>The committed tables under <code>outputs/</code> and <code>blog/data/</code> predate this fix, so their <code>abnormal_volume_score</code> column has the old values. They were left unchanged. Rerunning <code>gex run-offline-analysis</code> produces the corrected numbers.</p></div>
 
 <div class="box def"><span class="k">Considered and deliberately not changed</span>
-<p>Four things look like defects but are research decisions that would change every published number in the project, so they are documented above rather than silently altered: the extended-hours session used for realized variance, the inclusion of same-day expiries in the day-<em>t</em> gamma picture, the full-sample median used as the regime cut point, and the independent-row bootstrap on autocorrelated data. Three smaller ones: the ClickHouse client in <code>raw_cache_builder.py</code> is never explicitly closed (harmless in a one-shot command that then exits), <code>predictive.py</code> keeps an unused alias <code>add_naive_volatility_baseline</code> that only forwards to the current function, and the maximum cross-validation fold count in <code>predictive.py</code> is the bare number 5 rather than a named constant or a configuration entry.</p></div>
+<p>Four choices could look like defects but would change every published number: the extended-hours session for realized variance, same-day expiries in the day-<em>t</em> gamma picture, the full-sample median for the regime cut, and the independent-row bootstrap for autocorrelated data. Three smaller issues remain: the ClickHouse client in <code>raw_cache_builder.py</code> is not explicitly closed, <code>predictive.py</code> keeps the unused forwarding alias <code>add_naive_volatility_baseline</code>, and its maximum cross-validation fold count is the bare number 5 instead of a named constant or configuration entry.</p></div>
 
 <h2 id="callgraph"><span class="sec-no">14</span>Call graph</h2>
 
@@ -979,27 +979,27 @@ predictive_comparison            0</pre>
     ├── build_expanding_window_diagnostics()       research/predictive.py
     └── write_artifacts()                          pipeline/offline_pipeline.py</pre>
 
-<p class="fnote">Two things stand out. <code>_build_cleaning_state()</code> runs twice over 168,762 rows because the diagnostics and the cleaner each build it independently. And <code>build_quantile_summary()</code> runs 1,001 times, once for the point estimate and once per bootstrap resample. Neither is slow enough to matter here &mdash; the whole run takes a few seconds &mdash; but both would on a multi-year window.</p>
+<p class="fnote"><code>_build_cleaning_state()</code> runs twice over 168,762 rows because diagnostics and cleaning build it separately. <code>build_quantile_summary()</code> runs 1,001 times: once for the estimate and once per bootstrap resample. Neither matters for this few-second run, but both would matter over multiple years.</p>
 
 <h2 id="edge"><span class="sec-no">15</span>Edge cases</h2>
 
 <div class="scroll">
 <table>
-<thead><tr><th>Situation</th><th>What would go wrong</th><th>What handles it</th></tr></thead>
+<thead><tr><th>Situation</th><th>Risk</th><th>What handles it</th></tr></thead>
 <tbody>
-<tr><td>A raw Parquet file is missing</td><td>An opaque file-not-found traceback deep in the pipeline</td><td><code>_build_missing_raw_file_message()</code> raises a <code>RuntimeError</code> naming the file and the command that would create it</td></tr>
-<tr><td>A raw file has lost a column</td><td>Null columns propagating into every downstream table</td><td>Required-column check in <code>_load_required_raw_file()</code>, listing every missing name at once</td></tr>
-<tr><td>The exposure date is a Friday</td><td>Adding one calendar day lands on a Saturday and drops the row</td><td><code>_build_exposure_calendar()</code> shifts the observed calendar, so Friday matches Monday</td></tr>
-<tr><td>The last exposure date has no following day</td><td>A row with null targets entering the statistics</td><td>The inner join in <code>build_research_dataset()</code> drops it &mdash; 21 exposures become 20 pairs</td></tr>
-<tr><td>Total gamma mass is zero on some day</td><td>Division by zero producing infinities in four of the six factors</td><td><code>pl.when(total &gt; 0).then(...).otherwise(0.0)</code> in <code>_gamma_mass_share()</code> and the two imbalance builders</td></tr>
-<tr><td>A day has no strike with positive gamma mass</td><td>An empty group and a silently missing row</td><td><code>_build_largest_node_distance()</code> joins back onto the full date list and fills the gap with not-a-number</td></tr>
-<tr><td>The first trade date has no prior day</td><td>A misleading zero or a null in the close-to-close return and pinning distance</td><td>Explicit not-a-number contract in <code>build_daily_intraday_metrics()</code> and <code>attach_pinning_distance()</code></td></tr>
-<tr><td>The factor is constant across the sample</td><td>SciPy returning a divide-by-zero warning and a meaningless correlation</td><td><code>n_unique() &gt; 1</code> checks in <code>statistical_tests</code>, <code>multi_factor</code> and <code>_build_spearman_summary_row()</code>, all returning not-a-number instead</td></tr>
-<tr><td>Fewer than three usable rows for a correlation</td><td>Spearman on two points always returning plus or minus one</td><td><code>has_enough_rows = clean_frame.height &gt;= 3</code> in <code>_build_spearman_summary_row()</code></td></tr>
-<tr><td>A bootstrap resample loses a whole bucket</td><td>The missing mean counted as zero, dragging the interval down</td><td>The missing bucket is recorded as not-a-number and the bounds use <code>np.nanpercentile</code></td></tr>
-<tr><td>The training window is too short to cross-validate</td><td><code>RidgeCV</code> raising on an impossible fold count</td><td><code>effective_cv = min(5, n // 2)</code>, falling back to a fixed-penalty <code>Ridge</code> below two folds</td></tr>
-<tr><td>Fewer rows than <code>quantile_count</code></td><td>Empty buckets with gaps in the labels</td><td><code>_compact_bucket_labels()</code> remaps whatever buckets exist onto 0, 1, 2, &hellip;</td></tr>
-<tr><td>The sample is shorter than the regime or training window</td><td>A crash, or worse, a fabricated result</td><td>Every module returns an empty frame carrying the correct column names and types</td></tr>
+<tr><td>A raw Parquet file is missing</td><td>An unclear file-not-found traceback deep in the pipeline</td><td><code>_build_missing_raw_file_message()</code> raises a <code>RuntimeError</code> naming the file and the command that would create it</td></tr>
+<tr><td>A raw file has lost a column</td><td>Null columns spreading through downstream tables</td><td>Required-column check in <code>_load_required_raw_file()</code>, listing every missing name</td></tr>
+<tr><td>The exposure date is a Friday</td><td>Adding one calendar day gives Saturday and drops the row</td><td><code>_build_exposure_calendar()</code> shifts the observed calendar, so Friday matches Monday</td></tr>
+<tr><td>The last exposure date has no following day</td><td>A row with null targets entering the statistics</td><td>The inner join in <code>build_research_dataset()</code> drops it: 21 exposures become 20 pairs</td></tr>
+<tr><td>Total gamma mass is zero on some day</td><td>Division by zero creating infinities in four factors</td><td><code>pl.when(total &gt; 0).then(...).otherwise(0.0)</code> in <code>_gamma_mass_share()</code> and the two imbalance builders</td></tr>
+<tr><td>A day has no strike with positive gamma mass</td><td>An empty group and a missing row</td><td><code>_build_largest_node_distance()</code> joins back to all dates and fills the gap with not-a-number</td></tr>
+<tr><td>The first trade date has no prior day</td><td>A false zero or null in close-to-close return and pinning distance</td><td>Explicit not-a-number contract in <code>build_daily_intraday_metrics()</code> and <code>attach_pinning_distance()</code></td></tr>
+<tr><td>The factor is constant across the sample</td><td>A divide-by-zero warning and meaningless correlation</td><td><code>n_unique() &gt; 1</code> checks in <code>statistical_tests</code>, <code>multi_factor</code>, and <code>_build_spearman_summary_row()</code> return not-a-number</td></tr>
+<tr><td>Fewer than three usable rows for a correlation</td><td>Spearman on two points always returns plus or minus one</td><td><code>has_enough_rows = clean_frame.height &gt;= 3</code> in <code>_build_spearman_summary_row()</code></td></tr>
+<tr><td>A bootstrap resample loses a whole bucket</td><td>The missing mean is treated as zero, lowering the interval</td><td>The missing bucket is recorded as not-a-number and bounds use <code>np.nanpercentile</code></td></tr>
+<tr><td>The training window is too short to cross-validate</td><td><code>RidgeCV</code> raises for an impossible fold count</td><td><code>effective_cv = min(5, n // 2)</code>, falling back to fixed-penalty <code>Ridge</code> below two folds</td></tr>
+<tr><td>Fewer rows than <code>quantile_count</code></td><td>Empty buckets with gaps in the labels</td><td><code>_compact_bucket_labels()</code> remaps existing buckets to 0, 1, 2, &hellip;</td></tr>
+<tr><td>The sample is shorter than the regime or training window</td><td>A crash or a fabricated result</td><td>Each module returns an empty frame with the correct column names and types</td></tr>
 </tbody>
 </table>
 </div>
@@ -1008,21 +1008,21 @@ predictive_comparison            0</pre>
 
 <div class="scroll">
 <table>
-<thead><tr><th>Idiom or setting</th><th>What it does</th><th>The trap</th></tr></thead>
+<thead><tr><th>Idiom or setting</th><th>What it does</th><th>Risk</th></tr></thead>
 <tbody>
-<tr><td><code>dt.hour()</code> in Polars</td><td>Returns the local hour of a timezone-aware timestamp</td><td>The dtype is Int8. Any arithmetic that can exceed 127 wraps around silently. This is the bug fixed in section 13. Cast before you multiply.</td></tr>
-<tr><td><code>expr.over("trade_date")</code></td><td>Evaluates the whole expression inside each group</td><td>It respects the frame's existing row order, so it is only correct if you sorted first. Both uses here do sort first; I verified the resulting values are past-only.</td></tr>
-<tr><td><code>rolling_mean(...).shift(1)</code></td><td>Trailing average that excludes the current row</td><td>Reversing the order to <code>shift(1).rolling_mean(...)</code> is a different quantity. The regime module deliberately uses that other order, and both are correct for what they want.</td></tr>
-<tr><td><code>min_samples=1</code></td><td>Produces a value as soon as one observation exists</td><td>Early rows get a "20-day average" of one day. On a 21-day sample the window never fills at all.</td></tr>
-<tr><td><code>join(..., how="right")</code> in <code>_gamma_mass_share()</code></td><td>Keeps every trade date even when no contract fell in the band</td><td>Switching it to an inner join would silently delete those days from the factor table rather than giving them a zero share.</td></tr>
-<tr><td>Same-day expiries</td><td>Kept, because the cleaner only drops expiry <em>before</em> trade date</td><td>About 15 percent of day-<em>t</em> gamma mass is in contracts that cease to exist at that day's close and cannot affect day <em>t+1</em>.</td></tr>
-<tr><td>Extended-hours bars</td><td>04:00 to 19:59 rather than 09:30 to 16:00</td><td>Realized variance and the open-to-close return include thin pre-market minutes. There is no session filter and no setting for one.</td></tr>
-<tr><td><code>next_day_close_price</code> as a target</td><td>Correlates a shape factor against a price level</td><td>Two trending series produce a large rank correlation for no economic reason. The 0.684 cell is an artifact, not a result.</td></tr>
-<tr><td><code>abnormal_volume_score = 0.0</code></td><td>The explicit "no history" contract</td><td>Zero is also a plausible-looking low reading. It happens to affect only the first row here, which the alignment step discards.</td></tr>
-<tr><td><code>robustness_band_widths</code></td><td>Bands re-tested from scratch: 0.01, 0.03, 0.05</td><td>The configured baseline 0.02 is not in the list, so the table shows neighbours without the reference point beside them.</td></tr>
-<tr><td><code>near_spot_share_thresholds</code></td><td>Cut points 0.2, 0.4, 0.6</td><td>The observed share never exceeds 0.32, so two of the three rows compare a full sample against nothing.</td></tr>
-<tr><td><code>random_seed = 42</code> in <code>bootstrap.py</code></td><td>Pins the resampling, so the confidence bands reproduce exactly</td><td>It is the one tunable value not in <code>config.toml</code>, so a reader scanning that file will not find it. Reproducibility here is not evidence that the bands are stable &mdash; it only means the same resamples were drawn.</td></tr>
-<tr><td>The notebook's hard-coded numbers</td><td>Cells set the band, window, quantile count and alphas directly</td><td>They can and already do drift from <code>config.toml</code> &mdash; the notebook uses 500 bootstrap iterations against the configured 1,000, and four ridge penalties against the configured five.</td></tr>
+<tr><td><code>dt.hour()</code> in Polars</td><td>Returns the local hour of a timezone-aware timestamp</td><td>The type is Int8. Arithmetic above 127 wraps silently. This is the section 13 bug; cast before multiplying.</td></tr>
+<tr><td><code>expr.over("trade_date")</code></td><td>Evaluates an expression inside each group</td><td>It uses the table's existing row order, so sorting first is required. Both uses here sort first, and the resulting values are past-only.</td></tr>
+<tr><td><code>rolling_mean(...).shift(1)</code></td><td>Trailing average that excludes the current row</td><td>Reversing the order to <code>shift(1).rolling_mean(...)</code> gives a different quantity. The regime module intentionally uses that order.</td></tr>
+<tr><td><code>min_samples=1</code></td><td>Produces a value after one observation</td><td>Early rows get a "20-day average" based on one day. The window never fills on a 21-day sample.</td></tr>
+<tr><td><code>join(..., how="right")</code> in <code>_gamma_mass_share()</code></td><td>Keeps dates with no contract in the band</td><td>An inner join would delete those dates instead of assigning a zero share.</td></tr>
+<tr><td>Same-day expiries</td><td>Kept because the cleaner drops expiry only <em>before</em> trade date</td><td>About 15 percent of day-<em>t</em> gamma mass is in contracts that end at that close and cannot affect day <em>t+1</em>.</td></tr>
+<tr><td>Extended-hours bars</td><td>04:00 to 19:59 rather than 09:30 to 16:00</td><td>Realized variance and open-to-close return include thin pre-market minutes. No session filter or setting exists.</td></tr>
+<tr><td><code>next_day_close_price</code> as a target</td><td>Correlates a shape factor with a price level</td><td>Two trending series can show a large rank correlation without an economic relationship. The 0.684 cell is an artifact.</td></tr>
+<tr><td><code>abnormal_volume_score = 0.0</code></td><td>The explicit "no history" value</td><td>Zero also looks like a low reading. It affects only the first row here, which alignment removes.</td></tr>
+<tr><td><code>robustness_band_widths</code></td><td>Re-tests bands 0.01, 0.03, 0.05</td><td>The baseline 0.02 is absent, so the table does not show it beside its neighbours.</td></tr>
+<tr><td><code>near_spot_share_thresholds</code></td><td>Uses cut points 0.2, 0.4, 0.6</td><td>The observed share never exceeds 0.32, so two rows compare a full sample with an empty group.</td></tr>
+<tr><td><code>random_seed = 42</code> in <code>bootstrap.py</code></td><td>Fixes the resampling, so confidence bands repeat</td><td>It is the only tunable value outside <code>config.toml</code>. Reproducibility means the same resamples were drawn, not that the bands are stable.</td></tr>
+<tr><td>The notebook's hard-coded numbers</td><td>Sets the band, window, quantile count, and alphas directly</td><td>These can drift from <code>config.toml</code>. The notebook uses 500 rather than 1,000 bootstrap iterations and four rather than five ridge penalties.</td></tr>
 </tbody>
 </table>
 </div>
@@ -1030,39 +1030,39 @@ predictive_comparison            0</pre>
 <h2 id="limits"><span class="sec-no">17</span>Limitations, stated honestly</h2>
 
 <ul>
-<li><b>No position sign exists in the data.</b> Everything here is unsigned gamma mass. Nothing in this repository can distinguish a market where dealers are long gamma from one where they are short, and the sign is the whole mechanism behind the usual gamma story.</li>
-<li><b>Twenty paired observations.</b> One month of one symbol. Five quantile buckets of four days each. Nothing in this sample could reach statistical significance for an effect of a realistic size, so "no relationship found" here is close to uninformative about whether a relationship exists.</li>
-<li><b>Three of fifteen output tables are empty by default</b>, because two window settings are as long as the sample. The code is correct; the demonstration is short.</li>
-<li><b>Association only.</b> Even with a longer sample, this design would show that two things move together, not that one causes the other.</li>
-<li><b>Realized variance is measured over extended hours</b>, which is not the standard definition and would not match a vendor's daily realized-variance series. Measured properly over 09:30 to 16:00 it is smaller every day &mdash; median ratio 1.57 &mdash; and the two versions only rank days 0.61 alike, so the choice of session changes which days are the volatile ones.</li>
-<li><b>The spot close is the 19:59 print, not the 16:00 official close.</b> It differs from the regular-session close on all 21 days, by up to 0.34 per cent. The five ratio factors are unaffected because the scaling cancels, but the level factor moves by up to half a per cent and near-spot classification can flip for strikes sitting on the band edge.</li>
+<li><b>No position sign exists in the data.</b> Everything here is unsigned gamma mass. The repository cannot distinguish dealers being long gamma from dealers being short gamma, even though that sign drives the usual gamma mechanism.</li>
+<li><b>Twenty paired observations.</b> This is one month of one symbol, with five buckets of four days. The sample is too small to detect a realistic effect reliably, so "no relationship found" says little about whether a relationship exists.</li>
+<li><b>Three of fifteen output tables are empty by default</b>, because two windows are as long as the sample. The code is working; the demonstration is short.</li>
+<li><b>Association only.</b> Even with more data, this design would show that two things move together, not that one causes the other.</li>
+<li><b>Realized variance uses extended hours.</b> This is not the standard vendor definition. Using 09:30 to 16:00 makes it smaller every day, with median ratio 1.57, and the two versions rank days only 0.61 alike.</li>
+<li><b>The spot close is the 19:59 print, not the 16:00 official close.</b> It differs on all 21 days, by up to 0.34 per cent. The five ratio factors are unchanged because scaling cancels, but the level factor moves by up to half a per cent and near-spot classification can flip at the band edge.</li>
 <li><b>The confidence bands are optimistic</b>, because the bootstrap treats consecutive trading days as independent.</li>
-<li><b>The regime threshold uses the full sample</b>, which is fine for a descriptive split and not fine for anything described as real-time.</li>
-<li><b>Cleaning conventions move the answer.</b> Rows with non-positive open interest are 22 percent of the raw file, and same-day expiries are 15 percent of daily mass. Different, equally defensible choices would produce different factors.</li>
+<li><b>The regime threshold uses the full sample.</b> That is suitable for a descriptive split, not for a real-time classification.</li>
+<li><b>Cleaning conventions move the answer.</b> Non-positive open interest is 22 percent of the raw file, and same-day expiries are 15 percent of daily mass. Other defensible choices would produce different factors.</li>
 </ul>
 
 <h2 id="verify"><span class="sec-no">18</span>How the numbers on this page were checked</h2>
 
 <div class="scroll">
 <table>
-<thead><tr><th>Check</th><th>How it works</th><th>What it catches</th></tr></thead>
+<thead><tr><th>Check</th><th>Method</th><th>What it verifies</th></tr></thead>
 <tbody>
-<tr><td>Full pipeline run</td><td><code>uv run gex run-offline-analysis --start 2024-01-02 --end 2024-01-31</code> against the committed <code>data/raw/</code></td><td>Every table on this page is copied from that run's output files, not retyped from memory</td></tr>
-<tr><td>Test suite</td><td><code>uv run pytest -q</code></td><td>77 passed, 1 skipped. The skip is the ClickHouse smoke test, which needs a live server</td></tr>
-<tr><td>One row of arithmetic by hand</td><td>58,793 x 100 x 459.7363<sup>2</sup> x 0.0382</td><td>Confirms the gamma-mass formula matches the code to the last decimal: 47,468,616,780.585304</td></tr>
-<tr><td>One pinning distance by hand</td><td>Nearest of {470, 471, 475, 460, 480} to 456.6714, divided by 456.6714</td><td>Confirms the day-<em>t</em> to day-<em>t+1</em> pairing direction: 0.0072888, matching the table</td></tr>
+<tr><td>Full pipeline run</td><td><code>uv run gex run-offline-analysis --start 2024-01-02 --end 2024-01-31</code> against the committed <code>data/raw/</code></td><td>Confirms every table here comes from that run's output files</td></tr>
+<tr><td>Test suite</td><td><code>uv run pytest -q</code></td><td>77 passed, 1 skipped. The skipped ClickHouse smoke test needs a live server</td></tr>
+<tr><td>One row of arithmetic by hand</td><td>58,793 x 100 x 459.7363<sup>2</sup> x 0.0382</td><td>Confirms the gamma-mass formula: 47,468,616,780.585304</td></tr>
+<tr><td>One pinning distance by hand</td><td>Nearest of {470, 471, 475, 460, 480} to 456.6714, divided by 456.6714</td><td>Confirms the day-<em>t</em> to day-<em>t+1</em> pairing: 0.0072888</td></tr>
 <tr><td>Cross-check between two factors</td><td>Largest-node distance on 2 January against the moneyness of the 470 strike</td><td>Both are 0.022325189461871897, confirming the node-selection sort</td></tr>
-<tr><td>Front expiry versus same-day expiry</td><td>Recomputed the share of mass in contracts where expiry equals trade date</td><td>Identical to <code>front_expiry_gamma_mass_share</code> on every day, average 0.152</td></tr>
-<tr><td>Session coverage</td><td>Grouped the bars by date and took the first and last timestamp</td><td>04:00 to 19:59 New York, 755 to 842 bars a day &mdash; extended hours, not the regular session</td></tr>
-<tr><td>Spot close sensitivity</td><td>Compared the 19:59 close against the 15:59 close on all 21 days</td><td>They differ on every day, by up to \$1.61 (0.34 per cent). This corrected an earlier draft of this page that claimed the difference was zero</td></tr>
-<tr><td>Session sensitivity of the target</td><td>Recomputed realized variance over 09:30 to 16:00 only and compared against the shipped extended-hours column</td><td>Median ratio 1.57, mean 2.30, rank correlation 0.61 &mdash; the two definitions are not interchangeable</td></tr>
-<tr><td>Polars <code>.over()</code> ordering</td><td>Ran a small frame through both patterns used in <code>metrics.py</code></td><td>Confirms both the return and the volume baseline see only earlier rows</td></tr>
-<tr><td>The quantile-summary cleaning bug</td><td>Fed an eight-row frame whose two lowest-factor rows had null factors, then a frame with two null targets</td><td>Before: a phantom bucket 0 with mean 50.0, and a bucket reporting 2 observations behind a null mean. After: both rows dropped, counts match the means</td></tr>
-<tr><td>The bootstrap crash</td><td>Called <code>build_quantile_summary_with_ci</code> on a frame with an all-null target bucket</td><td>Before: <code>TypeError: float() argument must be ... not 'NoneType'</code>. After: intervals returned normally</td></tr>
-<tr><td>Fix leaves shipped numbers alone</td><td>Reran the full pipeline after the cleaning fix and compared every output table against the run before it</td><td>Identical to within 4e-14 relative, which is the float noise measured below, not a change</td></tr>
-<tr><td>Run-to-run reproducibility</td><td>Ran the identical pipeline twice and compared the CSVs byte for byte</td><td>They differ in the last digits, so the outputs are not bit-reproducible; drift is about 4e-14 relative</td></tr>
-<tr><td>The overflow bug</td><td>Printed <code>dt.hour() * 60</code> for hours 4, 9, 10, 15, 16 and 19</td><td>&minus;16, 28, 88, &minus;124, &minus;64, 116 &mdash; and the dtype is Int8, confirming the wraparound</td></tr>
-<tr><td>Impact of the fix</td><td>Recomputed <code>abnormal_volume_score</code> both ways over the whole sample</td><td>Largest change 0.0049; bucket count 256 before, 960 after</td></tr>
+<tr><td>Front expiry versus same-day expiry</td><td>Recomputed the share of mass where expiry equals trade date</td><td>Matches <code>front_expiry_gamma_mass_share</code> every day; average 0.152</td></tr>
+<tr><td>Session coverage</td><td>Grouped bars by date and took the first and last timestamp</td><td>04:00 to 19:59 New York, 755 to 842 bars per day: extended hours</td></tr>
+<tr><td>Spot close sensitivity</td><td>Compared the 19:59 close with the 15:59 close on all 21 days</td><td>They differ every day, by up to \$1.61 (0.34 per cent)</td></tr>
+<tr><td>Session sensitivity of the target</td><td>Recomputed realized variance over 09:30 to 16:00 and compared it with the shipped column</td><td>Median ratio 1.57, mean 2.30, rank correlation 0.61: the definitions differ</td></tr>
+<tr><td>Polars <code>.over()</code> ordering</td><td>Ran a small table through both patterns used in <code>metrics.py</code></td><td>Confirms return and volume baselines use only earlier rows</td></tr>
+<tr><td>The quantile-summary cleaning bug</td><td>Used an eight-row table with null factor and target values</td><td>After the fix, missing rows are dropped and counts match means</td></tr>
+<tr><td>The bootstrap crash</td><td>Called <code>build_quantile_summary_with_ci</code> with an all-null target bucket</td><td>After the fix, intervals return normally</td></tr>
+<tr><td>Fix leaves shipped numbers alone</td><td>Reran the pipeline and compared every output table with the earlier run</td><td>Matches within 4e-14 relative, the measured floating-point noise</td></tr>
+<tr><td>Run-to-run reproducibility</td><td>Ran the same pipeline twice and compared CSVs byte for byte</td><td>Last digits differ; drift is about 4e-14 relative</td></tr>
+<tr><td>The overflow bug</td><td>Printed <code>dt.hour() * 60</code> for hours 4, 9, 10, 15, 16, and 19</td><td>&minus;16, 28, 88, &minus;124, &minus;64, 116; Int8 wraparound is confirmed</td></tr>
+<tr><td>Impact of the fix</td><td>Recomputed <code>abnormal_volume_score</code> both ways over the full sample</td><td>Largest change 0.0049; bucket count 256 before and 960 after</td></tr>
 </tbody>
 </table>
 </div>
