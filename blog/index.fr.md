@@ -8,11 +8,12 @@ categories: ["Quantitative Research", "Options"]
 
 # Le gamma du SPY sans inventer le signe des dealers
 
-Le récit habituel sur le gamma est séduisant. Un dealer long gamma couvre à
-contre-courant du mouvement et peut l'amortir; un dealer short gamma couvre dans
-le sens du mouvement et peut l'amplifier. Mais une chaîne d'options contenant
-l'open interest et les Greeks n'indique pas qui détient chaque position. Sans
-ce signe, les données ne permettent pas d'identifier le gamma des dealers.
+Le récit habituel sur le gamma est bien ordonné. Un dealer long gamma couvre à
+contre-courant du mouvement et peut l'amortir. Un dealer short gamma couvre dans
+le sens du mouvement et peut l'amplifier. Le problème est qu'une chaîne
+d'options contenant l'open interest et les Greeks n'indique pas qui détient
+chaque position. Sans ce signe, les données ne permettent pas d'identifier le
+gamma des dealers.
 
 Le code appelait initialement sa somme quotidienne `net_gamma_exposure`.
 L'audit a montré que ce nom était faux : la série était égale à
@@ -21,14 +22,14 @@ n'existait jamais. Le moteur corrigé décrit maintenant ce que les entrées
 permettent réellement de mesurer : une masse de gamma non signée, pondérée par
 l'open interest.
 
-Ce facteur renommé pose tout de même une question empirique valable. La masse de
-gamma observée sur les options SPY à la date $t$ est-elle associée à la variance
-intrajournalière réalisée lors de la prochaine séance observée, $t+1$? Pour
-janvier 2024, la réponse est non. L'échantillon ne contient que 20 observations
-alignées. C'est un diagnostic, pas une conclusion définitive sur la
-microstructure des marchés.
+Ce facteur renommé laisse une question empirique plus étroite qui mérite d'être
+testée. La masse de gamma observée sur les options SPY à la date $t$ est-elle
+associée à la variance intrajournalière réalisée lors de la prochaine séance
+observée, $t+1$? Pour janvier 2024, je ne trouve aucune association. Avec
+seulement 20 observations alignées, j'y vois un diagnostic, pas une conclusion
+définitive sur la microstructure des marchés.
 
-## Ce que la chaîne permet de mesurer
+## Ce que la chaîne mesure
 
 Pour le contrat d'option $i$ à la date $t$, on définit :
 
@@ -45,10 +46,10 @@ $$
 m_{i,t}=OI_{i,t} M S_t^2 \Gamma_{i,t}.
 $$
 
-Le suivi des unités est instructif. Les contrats et les actions s'annulent, et
-$S_t^2\Gamma_{i,t}$ laisse un dollar. Ainsi, $m_{i,t}$ est une mesure de
-courbure en dollars pour un mouvement proportionnel unitaire du spot. Pour la
-convention plus courante d'un mouvement de un pour cent, on définit
+Les unités comptent ici. Les contrats et les actions s'annulent, et
+$S_t^2\Gamma_{i,t}$ laisse un dollar. Ainsi, $m_{i,t}$ mesure la courbure en
+dollars pour un mouvement proportionnel unitaire du spot. Pour la convention
+courante d'un mouvement de un pour cent, on définit
 
 $$
 m_{i,t}^{1\%}=0.01m_{i,t}.
@@ -183,7 +184,7 @@ histoire : ce mois fournit peu d'indices en faveur d'une relation.
 
 Renommer le facteur ne change ni ses valeurs, ni leur ordre, ni les quintiles,
 ni les statistiques de test. La correction change la portée économique du
-résultat. C'est précisément son intérêt.
+résultat. Elle n'a rien de cosmétique.
 
 Plusieurs facteurs structurels restent valides parce qu'ils n'exigent aucun
 signe de propriété. La part proche du spot mesure la fraction de la masse totale
@@ -219,9 +220,9 @@ Sa comparaison avec chaque estimation signée permettrait de séparer l'effet de
 la concentration observable de celui de l'hypothèse d'inventaire.
 
 Cette exécution de janvier ne valide pas le récit habituel sur le gamma des
-dealers. Elle fait quelque chose de plus modeste et de plus défendable : mesurer
-la courbure observable des options, respecter l'ordre temporel, publier un
-résultat nul et refuser d'inventer un signe de position.
+dealers. Elle mesure la courbure observable des options et respecte l'ordre
+temporel. Le résultat est nul. Je préfère l'écrire clairement plutôt que
+d'inventer un signe de position absent des données.
 
 ## Références
 

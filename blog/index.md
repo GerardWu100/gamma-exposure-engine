@@ -6,12 +6,12 @@ image: images/gamma-surface-cover.png
 categories: ["Quantitative Research", "Options"]
 ---
 
-# SPY Gamma Without an Invented Dealer Sign
+# SPY gamma without an invented dealer sign
 
-The usual gamma story is appealing. Dealers who are long gamma hedge against a
-price move and may dampen it; dealers who are short gamma hedge with the move
-and may amplify it. But an option chain with open interest and Greeks does not
-say who owns each position. Without that missing sign, a dataset cannot identify
+The usual gamma story is neat. Dealers who are long gamma hedge against a price
+move and may dampen it. Dealers who are short gamma hedge with the move and may
+amplify it. The problem is that an option chain with open interest and Greeks
+does not say who owns each position. Without that sign, the data cannot identify
 dealer gamma.
 
 I originally let the code call its daily sum `net_gamma_exposure`. An audit
@@ -20,13 +20,13 @@ showed that this was wrong: the series equalled `absolute_gamma_exposure` on all
 engine now reports exactly what the inputs support: unsigned,
 open-interest-weighted gamma mass.
 
-The renamed factor still produces a useful empirical question. Is gamma mass on
-SPY option snapshot date $t$ associated with intraday realized variance on the
-next observed trading date, $t+1$? In January 2024, the answer is no. The sample
-has only 20 aligned observations, so this is a diagnostic result, not a settled
-claim about market microstructure.
+The renamed factor leaves a narrower empirical question worth testing. Is gamma
+mass on SPY option snapshot date $t$ associated with intraday realized variance
+on the next observed trading date, $t+1$? In January 2024, I find no such
+association. With only 20 aligned observations, I read this as a diagnostic,
+not a settled claim about market microstructure.
 
-## What the chain can and cannot measure
+## What the chain measures
 
 For option contract $i$ on date $t$, define:
 
@@ -43,10 +43,10 @@ $$
 m_{i,t}=OI_{i,t} M S_t^2 \Gamma_{i,t}.
 $$
 
-The units are worth tracing. Contracts cancel with contracts, shares cancel
-with shares, and $S_t^2\Gamma_{i,t}$ leaves one dollar. Thus $m_{i,t}$ is a
-dollar-scaled curvature measure for a unit proportional spot move. For the more
-familiar one-percent convention, define
+The units matter here. Contracts cancel with contracts, shares cancel with
+shares, and $S_t^2\Gamma_{i,t}$ leaves one dollar. Therefore $m_{i,t}$ measures
+dollar-scaled curvature for a unit proportional spot move. For the familiar
+one-percent convention, define
 
 $$
 m_{i,t}^{1\%}=0.01m_{i,t}.
@@ -177,9 +177,9 @@ of a relationship.
 
 ## What survives the audit
 
-Renaming the factor does not alter its values, ordering, quantiles, or test
-statistics. It alters the economic claim attached to those values. That is the
-point of the correction.
+Renaming the factor leaves its values, ordering, quantiles, and test statistics
+unchanged. It changes the economic claim attached to them. That correction is
+not cosmetic.
 
 Several structural factors remain valid because they need no ownership sign.
 For example, the near-spot share asks how much total gamma mass sits within a
@@ -212,10 +212,10 @@ factor should remain as a benchmark. Comparing it with each signed estimate
 would reveal how much of a result comes from observable gamma concentration and
 how much comes from the inventory assumption.
 
-This January run does not validate the familiar dealer-gamma narrative. It does
-something more modest and more defensible: it measures observable option
-curvature, preserves time order, reports a null result, and refuses to invent a
-position sign.
+This January run does not validate the familiar dealer-gamma narrative. It
+measures observable option curvature and keeps the time order intact. The
+result is null. I would rather report that plainly than manufacture a position
+sign the data never contained.
 
 ## References
 
