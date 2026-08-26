@@ -115,7 +115,3 @@ chosen output directory:
 - `predictive_comparison.csv`: walk-forward predictive baseline comparison
 - robustness, diagnostics, and correlation tables (`.csv`)
 - `run_manifest.json`: run metadata
-
-## License
-
-All rights reserved. See [LICENSE](LICENSE).
